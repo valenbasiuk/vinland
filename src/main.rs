@@ -1,3 +1,9 @@
+use tracing::info;
+use tracing_subscriber;
+
 fn main() {
-    println!("Hello, world!");
+    // sistema de logs
+    tracing_subscriber::fmt::init();
+    
+    info!("iniciando vinland...");
 }
