@@ -1,0 +1,16 @@
+[package]
+name = "vinland"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+smithay = { git = "https://github.com/Smithay/smithay", features = [
+    "backend_drm",
+    "backend_winit",
+    "backend_udev",
+    "renderer_gl",
+    "wayland_frontend",
+    "xwayland",
+] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
