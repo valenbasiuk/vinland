@@ -5,7 +5,8 @@ use smithay::reexports::wayland_server::Display;
 // struct del estado (state.rs)
 mod state;
 use state::Vinland;
-
+use state::ClientState;
+use smithay::wayland::compositor::CompositorClientState;
 
 fn main() {
     // sistema de logs
@@ -36,7 +37,7 @@ loop_handle
         ),
 
 
-        // event handler, cuando hay un evento, se ejecuta esta función
+        // event handler
         |_, _, _state| {
             Ok(calloop::PostAction::Continue)
         },
@@ -53,7 +54,9 @@ loop_handle
         .insert_source(socket, |client_stream, _, state| {
             state
                 .display_handle
-                .insert_client(client_stream, std::sync::Arc::new(()))
+                .insert_client(client_stream, std::sync::Arc::new(ClientState {
+                    compositor_state: CompositorClientState::default(),
+                }))
                 .unwrap();
         })
         .unwrap();
