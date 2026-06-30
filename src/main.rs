@@ -17,9 +17,11 @@ fn main() {
     let mut event_loop: EventLoop<Vinland> = EventLoop::try_new()
         .expect("failed to initialize event loop");
 
+        // inicio del struc para definir inicializaciones
     let display: Display<Vinland> = Display::new().unwrap();
     let display_handle = display.handle();
-    let mut state = Vinland { display_handle };
+    let compositor_state = smithay::wayland::compositor::CompositorState::new::<Vinland>(&display_handle);
+    let mut state = Vinland {display_handle, compositor_state};
 
     info!("display wayland creado");
 
