@@ -1,0 +1,13 @@
+/home/valen/vsc/vinland/vinland/target/debug/deps/udev-4d2a9a40db01f3df.d: /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/lib.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/device.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/enumerator.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/list.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/monitor.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/udev.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/util.rs
+
+/home/valen/vsc/vinland/vinland/target/debug/deps/libudev-4d2a9a40db01f3df.rlib: /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/lib.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/device.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/enumerator.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/list.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/monitor.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/udev.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/util.rs
+
+/home/valen/vsc/vinland/vinland/target/debug/deps/libudev-4d2a9a40db01f3df.rmeta: /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/lib.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/device.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/enumerator.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/list.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/monitor.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/udev.rs /home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/util.rs
+
+/home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/lib.rs:
+/home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/device.rs:
+/home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/enumerator.rs:
+/home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/list.rs:
+/home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/monitor.rs:
+/home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/udev.rs:
+/home/valen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/udev-0.9.3/src/util.rs:
