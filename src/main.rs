@@ -17,12 +17,11 @@ fn main() {
     let mut event_loop: EventLoop<()> = EventLoop::try_new()
         .expect("failed to initialize event loop");
 
-    let mut display: Display<()> = Display::new().unwrap();
-
-    let _display_handle = display.handle();
+    let display: Display<Vinland> = Display::new().unwrap();
+    let display_handle = display.handle();
+    let mut state = Vinland { display_handle };
+    
     info!("display wayland creado");
-
-
 
     //loop handler, conecta display al loop
     let loop_handle = event_loop.handle();
