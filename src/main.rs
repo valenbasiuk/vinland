@@ -14,7 +14,7 @@ fn main() {
 
 
     // declara eventloop y display
-    let mut event_loop: EventLoop<()> = EventLoop::try_new()
+    let mut event_loop: EventLoop<Vinland> = EventLoop::try_new()
         .expect("failed to initialize event loop");
 
     let display: Display<Vinland> = Display::new().unwrap();
@@ -56,5 +56,5 @@ loop_handle
         })
         .unwrap();
 
-    event_loop.run(None, &mut (), |_| {}).unwrap();
+    event_loop.run(None, &mut state, |_| {}).unwrap();
 }
