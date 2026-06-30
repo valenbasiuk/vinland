@@ -22,7 +22,8 @@ fn main() {
     let display: Display<Vinland> = Display::new().unwrap();
     let display_handle = display.handle();
     let compositor_state = smithay::wayland::compositor::CompositorState::new::<Vinland>(&display_handle);
-    let mut state = Vinland {display_handle, compositor_state};
+    let shm_state = smithay::wayland::shm::ShmState::new::<Vinland>(&display_handle, vec![]);
+    let mut state = Vinland {display_handle, compositor_state, shm_state};
 
     info!("display wayland creado");
 
@@ -44,11 +45,11 @@ loop_handle
     )
     .unwrap();
 
-    info!("Display conectado al event loop");
+    info!("display conectado al event loop");
 
         let socket = smithay::wayland::socket::ListeningSocketSource::new_auto().unwrap();
     let socket_name = socket.socket_name().to_os_string();
-    info!("socket creado: {:?}", socket_name);
+    info!("socket wayland creado: {:?}", socket_name);
 
     loop_handle
         .insert_source(socket, |client_stream, _, state| {

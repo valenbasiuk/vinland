@@ -1,9 +1,26 @@
 use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::wayland::shm::ShmHandler;
+use smithay::wayland::buffer::BufferHandler;
+
 
 pub struct Vinland {
     pub display_handle: smithay::reexports::wayland_server::DisplayHandle,
     pub compositor_state: CompositorState,
+    pub shm_state: smithay::wayland::shm::ShmState,
+}
+
+impl ShmHandler for Vinland {
+    fn shm_state(&self) -> &smithay::wayland::shm::ShmState {
+        &self.shm_state
+    }   // pixel buffer protocol 
+}
+
+impl BufferHandler for Vinland {
+    fn buffer_destroyed(&mut self, buffer: &smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer) {
+        // All renderers can handle buffer destruction at this point.
+        // Some parts of window management may also use this function.
+    }
 }
 
     // data de los clientes para el handler
