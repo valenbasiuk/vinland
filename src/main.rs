@@ -54,7 +54,7 @@ loop_handle
     let socket_name = socket.socket_name().to_os_string();
     info!("socket wayland creado: {:?}", socket_name);
 
-    loop_handle
+    loop_handle // para aceptar conexiones entrantes
         .insert_source(socket, |client_stream, _, state| {
             state
                 .display_handle
@@ -62,6 +62,20 @@ loop_handle
                     compositor_state: CompositorClientState::default(),
                 }))
                 .unwrap();
+        })
+        .unwrap();
+
+    loop_handle // para manejar eventos de winit (ventana, teclado, mouse, etc)
+        .insert_source(winit_evt_loop, |event, _, _state| {
+            match event {
+                smithay::backend::winit::WinitEvent::CloseRequested => {
+                    info!("ventana cerrada");
+                }
+                smithay::backend::winit::WinitEvent::Redraw => {
+                    
+                }
+                _ => {}
+            }
         })
         .unwrap();
 
