@@ -16,14 +16,17 @@ fn main() {
 
     // declara eventloop y display
     let mut event_loop: EventLoop<Vinland> = EventLoop::try_new()
-        .expect("failed to initialize event loop");
+        .expect("fallo al inicializar el event loop");
 
         // inicio del struc para definir inicializaciones
     let display: Display<Vinland> = Display::new().unwrap();
     let display_handle = display.handle();
     let compositor_state = smithay::wayland::compositor::CompositorState::new::<Vinland>(&display_handle);
     let shm_state = smithay::wayland::shm::ShmState::new::<Vinland>(&display_handle, vec![]);
-    let mut state = Vinland {display_handle, compositor_state, shm_state};
+    let (backend, mut winit_evt_loop) = smithay::backend::winit::init::<smithay::backend::renderer::gles::GlesRenderer>()
+        .expect("fallo al inicializar el backend de winit");
+     
+    let mut state = Vinland {display_handle, compositor_state, shm_state, backend};
 
     info!("display wayland creado");
 

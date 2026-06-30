@@ -2,12 +2,14 @@ use smithay::wayland::compositor::{CompositorHandler, CompositorState, Composito
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::shm::ShmHandler;
 use smithay::wayland::buffer::BufferHandler;
-
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::winit::WinitGraphicsBackend;
 
 pub struct Vinland {
     pub display_handle: smithay::reexports::wayland_server::DisplayHandle,
     pub compositor_state: CompositorState,
     pub shm_state: smithay::wayland::shm::ShmState,
+    pub backend: WinitGraphicsBackend<GlesRenderer>,
 }
 
 impl ShmHandler for Vinland {
