@@ -1,2 +1,0 @@
-Un compositor Wayland en el fondo es un programa que está constantemente escuchando eventos — una app quiere abrir una ventana, el mouse se movió, una tecla fue presionada, etc. Eso se maneja con un event loop: un bucle infinito que espera eventos y los procesa uno por uno.
-Smithay usa una librería llamada calloop para esto.
