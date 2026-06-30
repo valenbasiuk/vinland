@@ -7,6 +7,9 @@ mod state;
 use state::Vinland;
 use state::ClientState;
 use smithay::wayland::compositor::CompositorClientState;
+use smithay::backend::renderer::Renderer;
+use smithay::backend::renderer::Frame;
+
 
 fn main() {
     // sistema de logs
@@ -65,14 +68,35 @@ loop_handle
         })
         .unwrap();
 
-    loop_handle // para manejar eventos de winit (ventana, teclado, mouse, etc)
-        .insert_source(winit_evt_loop, |event, _, _state| {
+    loop_handle // para manejar eventos de winit
+        .insert_source(winit_evt_loop, |event, _, state| {
             match event {
                 smithay::backend::winit::WinitEvent::CloseRequested => {
                     info!("ventana cerrada");
                 }
                 smithay::backend::winit::WinitEvent::Redraw => {
-                    
+                                        // 1= tamaño actual de la ventana
+                    let size = state.backend.window_size();
+                    // 2= el "daño" = área que vamos a redibujar (toda la ventana)
+                    let damage = smithay::utils::Rectangle::new((0, 0).into(), size);
+                    // 3= bind: prepara el renderer para dibujar
+                    let (renderer, mut framebuffer) = state.backend.bind().unwrap();
+                    // 4= render: inicia un frame con el tamaño y orientación
+                    let mut frame = renderer.render(
+                        &mut framebuffer,
+                        size,
+                        smithay::utils::Transform::Normal,
+                    ).unwrap();
+                    // 5. clear: pinta toda la pantalla de un color
+                    frame.clear(
+                        smithay::backend::renderer::Color32F::from([0.0, 1.0, 0.0, 1.0]),
+                        &[damage],
+                    ).unwrap();
+                    // 6. finish: termina el frame
+                    frame.finish().unwrap();
+                    drop(framebuffer);
+                    // 7. submit: manda el frame a la pantalla
+                    state.backend.submit(None).unwrap();
                 }
                 _ => {}
             }
