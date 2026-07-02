@@ -9,7 +9,11 @@ use state::ClientState;
 use smithay::wayland::compositor::CompositorClientState;
 use smithay::backend::renderer::Renderer;
 use smithay::backend::renderer::Frame;
-
+use smithay::backend::renderer::ImportAll;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::element::{Element, RenderElement, Kind};
+use smithay::backend::renderer::element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement};
+use smithay::utils::{Scale, Point, Physical};
 
 fn main() {
     // sistema de logs
@@ -22,18 +26,27 @@ fn main() {
         .expect("fallo al inicializar el event loop");
 
         // inicio del struc para definir inicializaciones
+    let loop_signal = event_loop.get_signal();
     let display: Display<Vinland> = Display::new().unwrap();
     let display_handle = display.handle();
     let compositor_state = smithay::wayland::compositor::CompositorState::new::<Vinland>(&display_handle);
     let shm_state = smithay::wayland::shm::ShmState::new::<Vinland>(&display_handle, vec![]);
+    // inicializa el estado de XDG Shell (protocolo de ventanas)
+    let xdg_shell_state = smithay::wayland::shell::xdg::XdgShellState::new::<Vinland>(&display_handle);
     let (backend, mut winit_evt_loop) = smithay::backend::winit::init::<smithay::backend::renderer::gles::GlesRenderer>()
         .expect("fallo al inicializar el backend de winit");
-     
-    let mut state = Vinland {display_handle, compositor_state, shm_state, backend};
+
+    let mut state = Vinland {loop_signal, 
+        display_handle, 
+        compositor_state, 
+        shm_state, 
+        backend, 
+        windows: Vec::new(),
+        xdg_shell_state,};
 
     info!("display wayland creado");
 
-    //loop handler, conecta display al loop
+    //loop handler q conecta display al loop
     let loop_handle = event_loop.handle();
 loop_handle
     .insert_source(
@@ -44,8 +57,12 @@ loop_handle
         ),
 
 
-        // event handler
-        |_, _, _state| {
+        // event handler — procesa los mensajes entrantes de los clientes
+        |_, display, state| {
+            // Safety: no estamos dropeando el display (calloop lo maneja)
+            unsafe {
+                display.get_mut().dispatch_clients(state).unwrap();
+            }
             Ok(calloop::PostAction::Continue)
         },
     )
@@ -73,35 +90,68 @@ loop_handle
             match event {
                 smithay::backend::winit::WinitEvent::CloseRequested => {
                     info!("ventana cerrada");
+                    state.loop_signal.stop();
                 }
                 smithay::backend::winit::WinitEvent::Redraw => {
-                                        // 1= tamaño actual de la ventana
                     let size = state.backend.window_size();
-                    // 2= el "daño" = área que vamos a redibujar (toda la ventana)
                     let damage = smithay::utils::Rectangle::new((0, 0).into(), size);
-                    // 3= bind: prepara el renderer para dibujar
+                    let scale = Scale::from(1.0);
+
+                    // bind: prepara el renderer
                     let (renderer, mut framebuffer) = state.backend.bind().unwrap();
-                    // 4= render: inicia un frame con el tamaño y orientación
+
+                    // PRIMERO: colectar render elements (necesita &mut renderer, antes del frame)
+                    let mut all_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+                    for window in &state.windows {
+                        let elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
+                            render_elements_from_surface_tree(
+                                renderer,
+                                window.wl_surface(),
+                                Point::<i32, Physical>::from((0, 0)),
+                                scale,
+                                1.0,
+                                Kind::Unspecified,
+                            );
+                        all_elements.extend(elems);
+                    }
+
+                    // crear el frame (también necesita &mut renderer)
                     let mut frame = renderer.render(
                         &mut framebuffer,
                         size,
                         smithay::utils::Transform::Normal,
                     ).unwrap();
-                    // 5. clear: pinta toda la pantalla de un color
+
+                    // fondo verde
                     frame.clear(
                         smithay::backend::renderer::Color32F::from([0.0, 1.0, 0.0, 1.0]),
                         &[damage],
                     ).unwrap();
-                    // 6. finish: termina el frame
-                    frame.finish().unwrap();
+
+                    // dibujar cada elemento
+                    for element in &all_elements {
+                        let _ = element.draw(
+                            &mut frame,
+                            element.src(),
+                            element.geometry(scale),
+                            &[damage],
+                            &[],
+                            None,
+                        );
+                    }
+
+                    let _ = frame.finish().unwrap();
                     drop(framebuffer);
-                    // 7. submit: manda el frame a la pantalla
                     state.backend.submit(None).unwrap();
+                    state.backend.window().request_redraw();
                 }
                 _ => {}
             }
         })
         .unwrap();
 
-    event_loop.run(None, &mut state, |_| {}).unwrap();
+    event_loop.run(None, &mut state, |state| {
+        // envia las respuestas pendientes a todos los clientes conectados
+        state.display_handle.flush_clients().unwrap();
+    }).unwrap();
 }
