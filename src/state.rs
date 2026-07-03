@@ -1,124 +1,100 @@
-use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::wayland::shm::ShmHandler;
-use smithay::wayland::buffer::BufferHandler;
+// state.rs
+// struct central de vinland y constructor
+
+use smithay::wayland::compositor::{CompositorState, CompositorClientState};
+use smithay::wayland::shm::ShmState;
+use smithay::wayland::shell::xdg::{XdgShellState, ToplevelSurface};
+use smithay::input::{SeatState, Seat, keyboard::XkbConfig};
+use smithay::output::{Output, PhysicalProperties, Subpixel, Mode, Scale as OutputScale};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::WinitGraphicsBackend;
+use smithay::reexports::wayland_server::{Display, DisplayHandle};
+use smithay::utils::Transform;
 use calloop::LoopSignal;
-use smithay::wayland::shell::xdg::{XdgShellHandler, XdgShellState, ToplevelSurface};
-use smithay::reexports::wayland_server::protocol::wl_seat;
-use smithay::utils::Serial;
-use smithay::wayland::shell::xdg::PopupSurface;
-use smithay::wayland::shell::xdg::PositionerState;
-use smithay::input::{SeatHandler, SeatState, Seat, pointer::CursorImageStatus};
-use smithay::wayland::output::OutputHandler;
-use smithay::output::Output;
-use smithay::backend::renderer::utils::on_commit_buffer_handler;
 
-
-
-
-use tracing::info;
-
-
-
+// vinland -> estado global del compositor
+// todos los handlers de protocolos reciben &mut self de este struct
 pub struct Vinland {
-    pub display_handle: smithay::reexports::wayland_server::DisplayHandle,
-    pub compositor_state: CompositorState,
-    pub shm_state: smithay::wayland::shm::ShmState,
-    pub backend: WinitGraphicsBackend<GlesRenderer>,
-    pub loop_signal: LoopSignal,
-    pub xdg_shell_state: XdgShellState,
-    pub seat: Seat<Vinland>,  
-    pub seat_state: SeatState<Vinland>,  // estado del protocolo wl_seat (input)
-    pub output: Output, 
-    pub windows: Vec<ToplevelSurface>
+    pub display_handle:    DisplayHandle,
+    pub compositor_state:  CompositorState,
+    pub shm_state:         ShmState,
+    pub xdg_shell_state:   XdgShellState,
+    pub seat_state:        SeatState<Vinland>,
+    pub seat:              Seat<Vinland>,       // todo: se usa cuando implementemos input
+    pub output:            Output,
+    pub backend:           WinitGraphicsBackend<GlesRenderer>,
+    pub loop_signal:       LoopSignal,
+    pub windows:           Vec<ToplevelSurface>,
 }
 
-impl ShmHandler for Vinland {
-    fn shm_state(&self) -> &smithay::wayland::shm::ShmState {
-        &self.shm_state
-    }   // pixel buffer protocol 
-}
-
-impl BufferHandler for Vinland {
-    fn buffer_destroyed(&mut self, buffer: &smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer) {
-        // All renderers can handle buffer destruction at this point.
-        // Some parts of window management may also use this function.
-    }
-}
-// 
-impl OutputHandler for Vinland {}
-
-
-    // data de los clientes para el handler
+// clientstate -> datos por cliente conectado
+// smithay los almacena internamente y los provee en client_compositor_state()
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
 }
 
 impl smithay::reexports::wayland_server::backend::ClientData for ClientState {}
 
-impl CompositorHandler for Vinland {
-    fn compositor_state(&mut self) -> &mut CompositorState {
-        &mut self.compositor_state
-    }
-
-    fn client_compositor_state<'a>(
-        &self,
-        client: &'a smithay::reexports::wayland_server::Client,
-    ) -> &'a CompositorClientState {
-        &client.get_data::<ClientState>().unwrap().compositor_state
-    }
-
-    fn commit(&mut self, surface: &WlSurface) {
-        // registra el buffer del cliente en el estado interno de Smithay
-        // sin esto, render_elements_from_surface_tree no puede importar el buffer
-        on_commit_buffer_handler::<Self>(surface);
-        // pedimos redibujo para que el proximo frame muestre el contenido del cliente
-        self.backend.window().request_redraw();
-    }
-}
-
-impl XdgShellHandler for Vinland {
-    fn xdg_shell_state(&mut self) -> &mut XdgShellState {
-        &mut self.xdg_shell_state
-    }
-        fn new_toplevel(&mut self, surface: ToplevelSurface) {
-                    surface.send_configure();
-                    info!("nuevo toplevel: {:?}", surface);
-        self.windows.push(surface);
-    }
-
-    //windows deletion method
-    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        self.windows.retain(|w| w.wl_surface() != surface.wl_surface());
-}
-//popups implementation (ventanas para menus / apps que tienen padre)
-            fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {}
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
-    fn reposition_request(&mut self, _surface: PopupSurface, _positioner: PositionerState, _token: u32) {}
-
-}
-
-
-//Delegados de las interfaces
+// delegate_dispatch2! -> genera el boilerplate de despacho de mensajes wayland
+// conecta cada tipo de mensaje wayland al handler correcto en vinland
 smithay::delegate_dispatch2!(Vinland);
 
-// implementacion del seat handler (teclado/mouse)
-impl SeatHandler for Vinland {
-    // WlSurface implementa KeyboardTarget, PointerTarget y TouchTarget
-    // es el tipo mas simple para focus
-    type KeyboardFocus = WlSurface;
-    type PointerFocus = WlSurface;
-    type TouchFocus = WlSurface;
+impl Vinland {
+    // new() -> crea e inicializa el compositor completo
+    // toma &display para que main.rs pueda moverlo al generic source de calloop
+    pub fn new(display: &Display<Vinland>, loop_signal: LoopSignal) -> (Self, impl calloop::EventSource<Event = smithay::backend::winit::WinitEvent, Metadata = (), Ret = ()>) {
+        let display_handle = display.handle();
 
-    fn seat_state(&mut self) -> &mut SeatState<Vinland> {
-        &mut self.seat_state
+        // protocolos wayland
+        let compositor_state = CompositorState::new::<Vinland>(&display_handle);
+        let shm_state        = ShmState::new::<Vinland>(&display_handle, vec![]);
+        let xdg_shell_state  = XdgShellState::new::<Vinland>(&display_handle);
+
+        // seat -> teclado + mouse
+        let mut seat_state = SeatState::new();
+        let mut seat = seat_state.new_wl_seat(&display_handle, "vinland-seat");
+        seat.add_keyboard(XkbConfig::default(), 200, 25).unwrap();
+        seat.add_pointer();
+
+        // output virtual -> pantalla que anunciamos a los clientes
+        // todo: leer el refresh rate real del monitor físico
+        let output = Output::new(
+            "vinland-output".into(),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: Subpixel::Unknown,
+                make: "Vinland".into(),
+                model: "Virtual".into(),
+                serial_number: "".into(),
+            },
+        );
+        let mode = Mode { size: (1920, 1080).into(), refresh: 60000 };
+        output.change_current_state(
+            Some(mode),
+            Some(Transform::Normal),
+            Some(OutputScale::Integer(1)),
+            Some((0, 0).into()),
+        );
+        output.set_preferred(mode);
+        output.create_global::<Vinland>(&display_handle);
+
+        // backend de winit -> renderiza dentro de una ventana del compositor host
+        let (backend, winit_evt_loop) = smithay::backend::winit::init::<GlesRenderer>()
+            .expect("fallo al inicializar el backend de winit");
+
+        let state = Vinland {
+            display_handle,
+            compositor_state,
+            shm_state,
+            xdg_shell_state,
+            seat_state,
+            seat,
+            output,
+            backend,
+            loop_signal,
+            windows: Vec::new(),
+        };
+
+        (state, winit_evt_loop)
     }
-
-    // cuando cambia el foco del teclado (por ahora no hacemos nada)
-    fn focus_changed(&mut self, _seat: &Seat<Self>, _focused: Option<&WlSurface>) {}
-
-    // cuando la app pide cambiar el cursor (por ahora ignoramos)
-    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
 }
