@@ -50,13 +50,13 @@ impl Vinland {
         let shm_state        = ShmState::new::<Vinland>(&display_handle, vec![]);
         let xdg_shell_state  = XdgShellState::new::<Vinland>(&display_handle);
 
-        // seat -> teclado + mouse
+        // seat (inputs generales)
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&display_handle, "vinland-seat");
         seat.add_keyboard(XkbConfig::default(), 200, 25).unwrap();
         seat.add_pointer();
 
-        // output virtual -> pantalla que anunciamos a los clientes
+        // output virtual
         // todo: leer el refresh rate real del monitor físico
         let output = Output::new(
             "vinland-output".into(),

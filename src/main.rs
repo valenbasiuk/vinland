@@ -1,5 +1,5 @@
 // main.rs
-// punto de entrada de vinland
+// punto de entrada
 // inicialización -> state.rs (Vinland::new)
 // renderizado    -> render.rs
 // protocolos     -> handlers/
@@ -58,7 +58,7 @@ fn main() {
             ).unwrap();
     }).unwrap();
 
-    // fuente 3 -> winit (redraw, close, input, etc.)
+    // fuente 3 -> winit
     loop_handle.insert_source(winit_evt_loop, move |event, _, state| {
         match event {
             smithay::backend::winit::WinitEvent::CloseRequested => {

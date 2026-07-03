@@ -21,6 +21,8 @@ use crate::state::Vinland;
 //   3. dibuja cada elemento
 //   4. envía el frame a la pantalla
 //   5. manda frame callbacks a los clientes
+// TODO: cuando haga composicion realmente (tiling) hay que pensar en los damage rects
+
 pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let size   = state.backend.window_size();
     let damage = smithay::utils::Rectangle::new((0, 0).into(), size);
@@ -43,14 +45,14 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         all_elements.extend(elems);
     }
 
-    // Flipped180 -> compensa que opengl tiene el eje Y invertido vs wayland
+    // flipped180 -> compensa que opengl tiene el eje Y invertido en wayland
     let mut frame = renderer
         .render(&mut framebuffer, size, Transform::Flipped180)
         .unwrap();
 
     // fondo negro
     frame.clear(
-        smithay::backend::renderer::Color32F::from([0.0, 0.0, 0.0, 1.0]),
+        smithay::backend::renderer::Color32F::from([0.5, 0.0, 0.5, 1.0]),
         &[damage],
     ).unwrap();
 
