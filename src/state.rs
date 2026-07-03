@@ -12,6 +12,9 @@ use smithay::wayland::shell::xdg::PopupSurface;
 use smithay::wayland::shell::xdg::PositionerState;
 use smithay::input::{SeatHandler, SeatState, Seat, pointer::CursorImageStatus};
 
+use tracing::info;
+
+
 
 pub struct Vinland {
     pub display_handle: smithay::reexports::wayland_server::DisplayHandle,
@@ -66,6 +69,7 @@ impl XdgShellHandler for Vinland {
     }
         fn new_toplevel(&mut self, surface: ToplevelSurface) {
                     surface.send_configure();
+                    info!("nuevo toplevel: {:?}", surface);
         self.windows.push(surface);
     }
 
