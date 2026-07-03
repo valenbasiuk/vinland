@@ -10,6 +10,7 @@ use smithay::reexports::wayland_server::protocol::wl_seat;
 use smithay::utils::Serial;
 use smithay::wayland::shell::xdg::PopupSurface;
 use smithay::wayland::shell::xdg::PositionerState;
+use smithay::input::{SeatHandler, SeatState, Seat, pointer::CursorImageStatus};
 
 
 pub struct Vinland {
@@ -19,6 +20,8 @@ pub struct Vinland {
     pub backend: WinitGraphicsBackend<GlesRenderer>,
     pub loop_signal: LoopSignal,
     pub xdg_shell_state: XdgShellState,
+    pub seat: Seat<Vinland>,  
+    pub seat_state: SeatState<Vinland>,  // estado del protocolo wl_seat (input)
     pub windows: Vec<ToplevelSurface>
 }
 
@@ -80,3 +83,22 @@ impl XdgShellHandler for Vinland {
 
 //Delegados de las interfaces
 smithay::delegate_dispatch2!(Vinland);
+
+// implementacion del seat handler (teclado/mouse)
+impl SeatHandler for Vinland {
+    // WlSurface implementa KeyboardTarget, PointerTarget y TouchTarget
+    // es el tipo mas simple para focus
+    type KeyboardFocus = WlSurface;
+    type PointerFocus = WlSurface;
+    type TouchFocus = WlSurface;
+
+    fn seat_state(&mut self) -> &mut SeatState<Vinland> {
+        &mut self.seat_state
+    }
+
+    // cuando cambia el foco del teclado (por ahora no hacemos nada)
+    fn focus_changed(&mut self, _seat: &Seat<Self>, _focused: Option<&WlSurface>) {}
+
+    // cuando la app pide cambiar el cursor (por ahora ignoramos)
+    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
+}

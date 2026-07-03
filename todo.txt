@@ -1,1 +1,3 @@
 wl_seat
+replace wl_shell (zxdg_shell_v6)
+https://github.com/QubesOS/qubes-gui-rust/tree/a545f4c7a49c2cce70088bcec84e9a2c6174bc40

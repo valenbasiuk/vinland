@@ -14,6 +14,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::element::{Element, RenderElement, Kind};
 use smithay::backend::renderer::element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement};
 use smithay::utils::{Scale, Point, Physical};
+use smithay::input::{SeatState, keyboard::XkbConfig};
 
 fn main() {
     // sistema de logs
@@ -33,6 +34,14 @@ fn main() {
     let shm_state = smithay::wayland::shm::ShmState::new::<Vinland>(&display_handle, vec![]);
     // inicializa el estado de XDG Shell (protocolo de ventanas)
     let xdg_shell_state = smithay::wayland::shell::xdg::XdgShellState::new::<Vinland>(&display_handle);
+    // inicializa el seat (protocolo de input: teclado + mouse)
+    let mut seat_state = SeatState::new();
+    // crea el seat y lo registra como global Wayland
+    let mut seat = seat_state.new_wl_seat(&display_handle, "vinland-seat");
+    // agrega capacidades: teclado con layout por defecto, delay 200ms, repeat 25Hz
+    seat.add_keyboard(XkbConfig::default(), 200, 25).unwrap();
+    // agrega pointer (mouse)
+    seat.add_pointer();
     let (backend, mut winit_evt_loop) = smithay::backend::winit::init::<smithay::backend::renderer::gles::GlesRenderer>()
         .expect("fallo al inicializar el backend de winit");
 
@@ -42,7 +51,10 @@ fn main() {
         shm_state, 
         backend, 
         windows: Vec::new(),
-        xdg_shell_state,};
+        xdg_shell_state,
+        seat_state,  // el seat ya tiene keyboard y pointer registrados
+        seat,
+    };
 
     info!("display wayland creado");
 
@@ -59,7 +71,7 @@ loop_handle
 
         // event handler — procesa los mensajes entrantes de los clientes
         |_, display, state| {
-            // Safety: no estamos dropeando el display (calloop lo maneja)
+            // Safety: no se dropea el display
             unsafe {
                 display.get_mut().dispatch_clients(state).unwrap();
             }
