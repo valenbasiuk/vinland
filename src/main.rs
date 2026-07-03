@@ -15,6 +15,8 @@ use smithay::backend::renderer::element::{Element, RenderElement, Kind};
 use smithay::backend::renderer::element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement};
 use smithay::utils::{Scale, Point, Physical};
 use smithay::input::{SeatState, keyboard::XkbConfig};
+use smithay::output::{Output, PhysicalProperties, Subpixel, Mode, Scale as OutputScale};
+use smithay::utils::Transform;
 
 fn main() {
     // sistema de logs
@@ -40,8 +42,26 @@ fn main() {
     let mut seat = seat_state.new_wl_seat(&display_handle, "vinland-seat");
     // agrega capacidades: teclado con layout por defecto, delay 200ms, repeat 25Hz
     seat.add_keyboard(XkbConfig::default(), 200, 25).unwrap();
-    // agrega pointer (mouse)
+
+    
     seat.add_pointer();
+    let output = Output::new(
+    "vinland-output".into(),   
+        PhysicalProperties {
+        size: (0, 0).into(), 
+
+                subpixel: Subpixel::Unknown,
+        make: "Vinland".into(),
+        model: "Virtual".into(),
+        serial_number: "".into(),
+    },
+);
+let mode = Mode { size: (1920, 1080).into(), refresh: 60000 };
+output.change_current_state(Some(mode), Some(Transform::Normal), Some(OutputScale::Integer(1)), Some((0,0).into()));
+output.set_preferred(mode);
+output.create_global::<Vinland>(&display_handle);
+
+
     let (backend, mut winit_evt_loop) = smithay::backend::winit::init::<smithay::backend::renderer::gles::GlesRenderer>()
         .expect("fallo al inicializar el backend de winit");
 

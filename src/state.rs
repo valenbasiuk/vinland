@@ -11,6 +11,8 @@ use smithay::utils::Serial;
 use smithay::wayland::shell::xdg::PopupSurface;
 use smithay::wayland::shell::xdg::PositionerState;
 use smithay::input::{SeatHandler, SeatState, Seat, pointer::CursorImageStatus};
+use smithay::wayland::output::OutputHandler;
+
 
 use tracing::info;
 
@@ -40,6 +42,8 @@ impl BufferHandler for Vinland {
         // Some parts of window management may also use this function.
     }
 }
+impl OutputHandler for Vinland {}
+
 
     // data de los clientes para el handler
 pub struct ClientState {
