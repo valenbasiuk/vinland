@@ -11,6 +11,7 @@ smithay = { git = "https://github.com/Smithay/smithay", features = [
     "renderer_gl",
     "wayland_frontend",
     "xwayland",
+    "desktop",
 ] }
 calloop = "0.14"
 tracing = "0.1"

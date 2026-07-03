@@ -17,11 +17,14 @@ use smithay::utils::{Scale, Point, Physical};
 use smithay::input::{SeatState, keyboard::XkbConfig};
 use smithay::output::{Output, PhysicalProperties, Subpixel, Mode, Scale as OutputScale};
 use smithay::utils::Transform;
+use smithay::desktop::utils::send_frames_surface_tree;
+
 
 fn main() {
     // sistema de logs
     tracing_subscriber::fmt::init();
     info!("iniciando vinland...");
+    let start_time = std::time::Instant::now(); //timer para callbaks
 
 
     // declara eventloop y display
@@ -43,7 +46,7 @@ fn main() {
     // agrega capacidades: teclado con layout por defecto, delay 200ms, repeat 25Hz
     seat.add_keyboard(XkbConfig::default(), 200, 25).unwrap();
 
-    
+
     seat.add_pointer();
     let output = Output::new(
     "vinland-output".into(),   
@@ -74,6 +77,7 @@ output.create_global::<Vinland>(&display_handle);
         xdg_shell_state,
         seat_state,  // el seat ya tiene keyboard y pointer registrados
         seat,
+        output,
     };
 
     info!("display wayland creado");
@@ -151,7 +155,7 @@ loop_handle
                     let mut frame = renderer.render(
                         &mut framebuffer,
                         size,
-                        smithay::utils::Transform::Normal,
+                        smithay::utils::Transform::Flipped180,
                     ).unwrap();
 
                     // fondo verde
@@ -175,6 +179,16 @@ loop_handle
                     let _ = frame.finish().unwrap();
                     drop(framebuffer);
                     state.backend.submit(None).unwrap();
+                          let output = state.output.clone();
+                         for window in &state.windows {
+                             send_frames_surface_tree(
+                                  window.wl_surface(),       // ← la superficie
+                                  &output,                   // ← en qué pantalla está
+                                start_time.elapsed(),      // ← timestamp actual (Duration)
+                                None,                      // ← sin throttle de frames
+                                |_, _| Some(output.clone()), // ← closure: todas en nuestro único output
+                             );
+                         }
                     state.backend.window().request_redraw();
                 }
                 _ => {}

@@ -12,6 +12,10 @@ use smithay::wayland::shell::xdg::PopupSurface;
 use smithay::wayland::shell::xdg::PositionerState;
 use smithay::input::{SeatHandler, SeatState, Seat, pointer::CursorImageStatus};
 use smithay::wayland::output::OutputHandler;
+use smithay::output::Output;
+use smithay::backend::renderer::utils::on_commit_buffer_handler;
+
+
 
 
 use tracing::info;
@@ -27,6 +31,7 @@ pub struct Vinland {
     pub xdg_shell_state: XdgShellState,
     pub seat: Seat<Vinland>,  
     pub seat_state: SeatState<Vinland>,  // estado del protocolo wl_seat (input)
+    pub output: Output, 
     pub windows: Vec<ToplevelSurface>
 }
 
@@ -42,6 +47,7 @@ impl BufferHandler for Vinland {
         // Some parts of window management may also use this function.
     }
 }
+// 
 impl OutputHandler for Vinland {}
 
 
@@ -64,7 +70,13 @@ impl CompositorHandler for Vinland {
         &client.get_data::<ClientState>().unwrap().compositor_state
     }
 
-    fn commit(&mut self, _surface: &WlSurface) {}
+    fn commit(&mut self, surface: &WlSurface) {
+        // registra el buffer del cliente en el estado interno de Smithay
+        // sin esto, render_elements_from_surface_tree no puede importar el buffer
+        on_commit_buffer_handler::<Self>(surface);
+        // pedimos redibujo para que el proximo frame muestre el contenido del cliente
+        self.backend.window().request_redraw();
+    }
 }
 
 impl XdgShellHandler for Vinland {
