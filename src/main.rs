@@ -59,6 +59,8 @@ fn main() {
         serial_number: "".into(),
     },
 );
+
+// pantalla virtual qe anuncia a los clientes
 let mode = Mode { size: (1920, 1080).into(), refresh: 60000 };
 output.change_current_state(Some(mode), Some(Transform::Normal), Some(OutputScale::Integer(1)), Some((0,0).into()));
 output.set_preferred(mode);
