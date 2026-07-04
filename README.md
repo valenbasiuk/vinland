@@ -1,5 +1,5 @@
 # this is not intended to be used.
-its mostly an experiment to learn about how compositors work and the low level connection between the kernel and the screen
+its mostly an experiment to learn about Rust, how compositors work and the low level connection between the kernel and the screen
 
 # whats it for right now/what i want to achieve
 
