@@ -3,13 +3,14 @@
 
 use smithay::wayland::compositor::{CompositorState, CompositorClientState};
 use smithay::wayland::shm::ShmState;
+use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::xdg::{XdgShellState, ToplevelSurface};
 use smithay::input::{SeatState, Seat, keyboard::XkbConfig};
 use smithay::output::{Output, PhysicalProperties, Subpixel, Mode, Scale as OutputScale};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::WinitGraphicsBackend;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::Transform;
+use smithay::utils::{Point, Logical, Transform};
 use calloop::LoopSignal;
 
 // vinland -> estado global del compositor
@@ -25,6 +26,8 @@ pub struct Vinland {
     pub backend:           WinitGraphicsBackend<GlesRenderer>,
     pub loop_signal:       LoopSignal,
     pub windows:           Vec<ToplevelSurface>,
+    pub pointer_pos:       Point<f64, Logical>, // posición actual del cursor en espacio lógico
+    pub data_device_state: DataDeviceState,
 }
 
 // clientstate -> datos por cliente conectado
@@ -49,6 +52,7 @@ impl Vinland {
         let compositor_state = CompositorState::new::<Vinland>(&display_handle);
         let shm_state        = ShmState::new::<Vinland>(&display_handle, vec![]);
         let xdg_shell_state  = XdgShellState::new::<Vinland>(&display_handle);
+        let data_device_state = DataDeviceState::new::<Vinland>(&display_handle);
 
         // seat (inputs generales)
         let mut seat_state = SeatState::new();
@@ -93,6 +97,8 @@ impl Vinland {
             backend,
             loop_signal,
             windows: Vec::new(),
+            pointer_pos: (0.0, 0.0).into(),
+            data_device_state,
         };
 
         (state, winit_evt_loop)

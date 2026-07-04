@@ -7,6 +7,7 @@
 use std::time::Instant;
 use tracing::info;
 use calloop::EventLoop;
+use smithay::backend::winit::WinitInput;
 use smithay::reexports::wayland_server::Display;
 use smithay::wayland::compositor::CompositorClientState;
 
@@ -67,6 +68,12 @@ fn main() {
             }
             smithay::backend::winit::WinitEvent::Redraw => {
                 render::render_frame(state, start_time);
+            }
+            smithay::backend::winit::WinitEvent::Input(event) => {
+                // input event del backend -> traducido a protocolos wayland en process_input_event
+                state.process_input_event::<WinitInput>(event);
+                // pedimos redibujo para actualizar el cursor visual
+                state.backend.window().request_redraw();
             }
             _ => {}
         }
