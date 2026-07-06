@@ -12,6 +12,8 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::utils::{Scale, Point, Physical, Transform};
 use smithay::desktop::utils::send_frames_surface_tree;
+use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
+use smithay::utils::IsAlive;
 
 use crate::state::Vinland;
 
@@ -22,61 +24,19 @@ use crate::state::Vinland;
 //   4. envía el frame a la pantalla
 //   5. manda frame callbacks a los clientes
 // TODO: cuando haga composicion realmente (tiling) hay que pensar en los damage rects
-
-//
-// LOGICA DEL CURSOR
-//
-
-    // reset del cursor si la superficie ya no está viva
-    let mut reset = false;
-    if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
-        reset = !surface.alive();
-    }
-    if reset {
-        state.cursor_status = CursorImageStatus::default_named();
-    }
-
-    // si el cursor es una superficie (dibujada por la app), la agregamos a los elementos a dibujar
-    if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
-        // with_states accede a los metadatos asociados a la superficie
-        let hotspot = smithay::wayland::compositor::with_states(surface, |states| {
-            states.data_map
-                .get::<CursorImageSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .hotspot
-        });
-
-        // resta en coordenadas logicas enteras (Opción A) y luego pasa a physical
-        let cursor_pos = (state.pointer_pos.to_i32_round() - hotspot).to_physical(scale);
-
-        // render_elements_from_surface_tree importa el buffer del cursor
-        let cursor_elems = render_elements_from_surface_tree(
-            renderer,
-            surface,
-            cursor_pos,
-            scale,
-            1.0,
-            Kind::Cursor,
-        );
-        all_elements.extend(cursor_elems);
-    }
-
-    
-    //
-    // LOGICA DE DRAWING
-    //
-
 pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let size   = state.backend.window_size();
     let damage = smithay::utils::Rectangle::new((0, 0).into(), size);
     let scale  = Scale::from(1.0);
 
+    // ocultar el cursor del host (Winit) si estamos dibujando un cursor personalizado
+    let cursor_visible = !matches!(state.cursor_status, CursorImageStatus::Surface(_));
+    state.backend.window().set_cursor_visible(cursor_visible);
+
     // bind() -> prepara el renderer y obtiene el framebuffer del frame actual
     let (renderer, mut framebuffer) = state.backend.bind().unwrap();
 
-    // render_elements_from_surface_tree -> importa el buffer del cliente al renderer
+    // 1. colectar elementos de las ventanas
     let mut all_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
     for window in &state.windows {
         let elems = render_elements_from_surface_tree(
@@ -90,12 +50,51 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         all_elements.extend(elems);
     }
 
-    // flipped180 -> compensa que opengl tiene el eje Y invertido en wayland
+    // 2. lógica del cursor
+    // reset del cursor si la superficie ya no está viva
+    let mut reset = false;
+    if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
+        reset = !surface.alive();
+    }
+    if reset {
+        state.cursor_status = CursorImageStatus::default_named();
+    }
+
+    // si el cursor es una superficie (dibujada por la app), la agregamos a los elementos a dibujar
+    if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
+        // with_states accede a los metadatos asociados a la superficie del cursor
+        let hotspot = smithay::wayland::compositor::with_states(surface, |states| {
+            states.data_map
+                .get::<CursorImageSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .hotspot
+        });
+
+        // resta en f64, aplica la escala y finalmente redondea a enteros
+        let cursor_pos = (state.pointer_pos - hotspot.to_f64())
+            .to_physical(scale)
+            .to_i32_round();
+
+        // render_elements_from_surface_tree importa el buffer del cursor
+        let cursor_elems = render_elements_from_surface_tree(
+            renderer,
+            surface,
+            cursor_pos,
+            scale,
+            1.0,
+            Kind::Cursor,
+        );
+        all_elements.extend(cursor_elems);
+    }
+
+    // 3. renderizado final de OpenGL
     let mut frame = renderer
         .render(&mut framebuffer, size, Transform::Flipped180)
         .unwrap();
 
-    // fondo negro
+    // fondo violeta oscuro/magenta (el color [0.5, 0.0, 0.5] que elegiste)
     frame.clear(
         smithay::backend::renderer::Color32F::from([0.5, 0.0, 0.5, 1.0]),
         &[damage],
@@ -117,7 +116,6 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     state.backend.submit(None).unwrap();
 
     // send_frames_surface_tree -> avisa a cada cliente que su frame fue mostrado
-    // el cliente espera este callback para saber cuándo mandar el próximo frame
     let output = state.output.clone();
     for window in &state.windows {
         send_frames_surface_tree(
