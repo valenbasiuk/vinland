@@ -5,7 +5,7 @@ use smithay::wayland::compositor::{CompositorState, CompositorClientState};
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::xdg::{XdgShellState, ToplevelSurface};
-use smithay::input::{SeatState, Seat, keyboard::XkbConfig};
+use smithay::input::{SeatState, Seat, keyboard::XkbConfig, pointer::CursorImageStatus};
 use smithay::output::{Output, PhysicalProperties, Subpixel, Mode, Scale as OutputScale};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::WinitGraphicsBackend;
@@ -28,6 +28,7 @@ pub struct Vinland {
     pub windows:           Vec<ToplevelSurface>,
     pub pointer_pos:       Point<f64, Logical>, // posición actual del cursor en espacio lógico
     pub data_device_state: DataDeviceState,
+    pub cursor_status:     CursorImageStatus,   // estado/imagen actual del cursor
 }
 
 // clientstate -> datos por cliente conectado
@@ -99,6 +100,7 @@ impl Vinland {
             windows: Vec::new(),
             pointer_pos: (0.0, 0.0).into(),
             data_device_state,
+            cursor_status: CursorImageStatus::default_named(),
         };
 
         (state, winit_evt_loop)

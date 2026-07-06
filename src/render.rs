@@ -23,6 +23,51 @@ use crate::state::Vinland;
 //   5. manda frame callbacks a los clientes
 // TODO: cuando haga composicion realmente (tiling) hay que pensar en los damage rects
 
+//
+// LOGICA DEL CURSOR
+//
+
+    // reset del cursor si la superficie ya no está viva
+    let mut reset = false;
+    if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
+        reset = !surface.alive();
+    }
+    if reset {
+        state.cursor_status = CursorImageStatus::default_named();
+    }
+
+    // si el cursor es una superficie (dibujada por la app), la agregamos a los elementos a dibujar
+    if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
+        // with_states accede a los metadatos asociados a la superficie
+        let hotspot = smithay::wayland::compositor::with_states(surface, |states| {
+            states.data_map
+                .get::<CursorImageSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .hotspot
+        });
+
+        // resta en coordenadas logicas enteras (Opción A) y luego pasa a physical
+        let cursor_pos = (state.pointer_pos.to_i32_round() - hotspot).to_physical(scale);
+
+        // render_elements_from_surface_tree importa el buffer del cursor
+        let cursor_elems = render_elements_from_surface_tree(
+            renderer,
+            surface,
+            cursor_pos,
+            scale,
+            1.0,
+            Kind::Cursor,
+        );
+        all_elements.extend(cursor_elems);
+    }
+
+    
+    //
+    // LOGICA DE DRAWING
+    //
+
 pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let size   = state.backend.window_size();
     let damage = smithay::utils::Rectangle::new((0, 0).into(), size);

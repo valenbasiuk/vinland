@@ -1,4 +1,5 @@
 // seat handler -> wl_seat, wl_keyboard, wl_pointer
+// viaje del input en general desde el os hasta las apps
 
 use smithay::backend::input::{
     self, Axis, AxisSource, Event, InputBackend, InputEvent,
@@ -28,8 +29,9 @@ impl SeatHandler for Vinland {
     fn focus_changed(&mut self, _seat: &Seat<Self>, _focused: Option<&WlSurface>) {}
 
     // llamado cuando una app pide cambiar la imagen del cursor
-    // todo: renderizar el cursor custom de la app en pantalla
-    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
+    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
+        self.cursor_status = image;
+    }
 }
 
 impl Vinland {
@@ -37,6 +39,8 @@ impl Vinland {
     // winit genera InputEvent<WinitInput>, nosotros los mapeamos al seat
     pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
         match event {
+
+
             // tecla presionada o soltada
             InputEvent::Keyboard { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
