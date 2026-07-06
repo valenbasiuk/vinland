@@ -77,6 +77,8 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             .to_physical(scale)
             .to_i32_round();
 
+        // let cursor_pos = cursor_pos + Point::from((100, 100)); // Cursor tester
+
         // render_elements_from_surface_tree importa el buffer del cursor
         let cursor_elems = render_elements_from_surface_tree(
             renderer,
