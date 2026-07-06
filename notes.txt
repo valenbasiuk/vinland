@@ -1,0 +1,6 @@
+for cursor drawing, two main options were available. 
+1- to do the maths in logical coordinates first and then convert to physical
+or
+2- to draw everything on physical first and then delete the final physical pixels multiplied by scale
+
+chose the first one because of less logical programming and slightly more optimal.
