@@ -151,24 +151,26 @@ impl Vinland {
     }
 
     // surface_under -> devuelve qué wl_surface está bajo un punto lógico
-    // también devuelve el offset de esa superficie dentro del espacio global
-    // todo: cuando implementes tiles/stacking, acá vas a iterar en z-order
-    //       y vas a usar _pos para detectar qué ventana está bajo el cursor
+    // itera las ventanas en orden inverso (la última = la más al frente)
+    // y devuelve la superficie + el offset del cursor dentro de ella
     pub fn surface_under(
         &self,
-        _pos: Point<f64, Logical>,
+        pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        // por ahora: la última ventana en el vec (la más reciente) recibe el foco
-        // todas las ventanas están posicionadas en (0,0)
-        self.windows.last().map(|w| (w.wl_surface().clone(), (0.0, 0.0).into()))
+        for window in self.windows.iter().rev() {
+            // contains verifica si el punto está dentro del rectangle del tile
+            if window.rect.to_f64().contains(pos) {
+                // offset = pos del mouse relativa a la esquina sup-izq de la ventana
+                let local = pos - window.rect.loc.to_f64();
+                return Some((window.surface.wl_surface().clone(), local));
+            }
+        }
+        None
     }
 
     // update_keyboard_focus -> le dice al keyboard handle qué superficie tiene foco
-    // se llama al hacer click, al abrir ventana nueva, etc.
     pub fn update_keyboard_focus(&mut self, pos: Point<f64, Logical>, serial: smithay::utils::Serial) {
         let keyboard = self.seat.get_keyboard().unwrap();
-
-        // si el pointer no está en ninguna superficie, quitamos el foco del teclado
         match self.surface_under(pos) {
             Some((surface, _)) => {
                 keyboard.set_focus(self, Some(surface), serial);

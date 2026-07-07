@@ -10,8 +10,15 @@ use smithay::output::{Output, PhysicalProperties, Subpixel, Mode, Scale as Outpu
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::WinitGraphicsBackend;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{Point, Logical, Transform};
+use smithay::utils::{Point, Logical, Transform, Rectangle, Size};
 use calloop::LoopSignal;
+
+// window -> representa una ventana y su posición/tamaño en pantalla (tiling layout)
+// tener surface y rect juntos = mejor cache locality que tenerlos en vecs separados
+pub struct Window {
+    pub surface: ToplevelSurface,
+    pub rect:    Rectangle<i32, Logical>,
+}
 
 // vinland -> estado global del compositor
 // todos los handlers de protocolos reciben &mut self de este struct
@@ -25,7 +32,7 @@ pub struct Vinland {
     pub output:            Output,
     pub backend:           WinitGraphicsBackend<GlesRenderer>,
     pub loop_signal:       LoopSignal,
-    pub windows:           Vec<ToplevelSurface>,
+    pub windows:           Vec<Window>,          // ventanas activas del compositor
     pub pointer_pos:       Point<f64, Logical>, // posición actual del cursor en espacio lógico
     pub data_device_state: DataDeviceState,
     pub cursor_status:     CursorImageStatus,   // estado/imagen actual del cursor
@@ -105,4 +112,49 @@ impl Vinland {
 
         (state, winit_evt_loop)
     }
+
+    // retile -> calcula y envía la nueva disposición tiling a todas las ventanas
+    // layout: 1 ventana = fullscreen, 2+ = master izquierda + stack derecha apilado
+    pub fn retile(&mut self) {
+        let n = self.windows.len();
+        if n == 0 { return; }
+
+        // tamaño total de la pantalla en coordenadas lógicas (scale=1 → lógico == físico)
+        let out_size = self.output.current_mode()
+            .map(|m| m.size)
+            .unwrap_or_else(|| (1920, 1080).into());
+        let w = out_size.w;
+        let h = out_size.h;
+
+        if n == 1 {
+            // única ventana: fullscreen
+            let rect = Rectangle::new((0, 0).into(), (w, h).into());
+            self.windows[0].rect = rect;
+            self.windows[0].surface.with_pending_state(|s| {
+                s.size = Some(Size::from((w, h)));
+            });
+            self.windows[0].surface.send_pending_configure();
+        } else {
+            // master: mitad izquierda, ocupa toda la altura
+            let master_w = w / 2;
+            self.windows[0].rect = Rectangle::new((0, 0).into(), (master_w, h).into());
+            self.windows[0].surface.with_pending_state(|s| {
+                s.size = Some(Size::from((master_w, h)));
+            });
+            self.windows[0].surface.send_pending_configure();
+
+            // stack: mitad derecha, dividida en franjas horizontales iguales
+            let stack_w = w - master_w;
+            let stack_h = h / (n as i32 - 1);
+            for (i, win) in self.windows[1..].iter_mut().enumerate() {
+                let y = i as i32 * stack_h;
+                win.rect = Rectangle::new((master_w, y).into(), (stack_w, stack_h).into());
+                win.surface.with_pending_state(|s| {
+                    s.size = Some(Size::from((stack_w, stack_h)));
+                });
+                win.surface.send_pending_configure();
+            }
+        }
+    }
 }
+

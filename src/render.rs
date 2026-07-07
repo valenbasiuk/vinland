@@ -10,7 +10,7 @@ use smithay::backend::renderer::element::{Element, RenderElement, Kind};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::utils::{Scale, Point, Physical, Transform};
+use smithay::utils::{Scale, Transform};
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::utils::IsAlive;
@@ -36,13 +36,15 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     // bind() -> prepara el renderer y obtiene el framebuffer del frame actual
     let (renderer, mut framebuffer) = state.backend.bind().unwrap();
 
-    // 1. colectar elementos de las ventanas
+    // 1. colectar elementos de las ventanas en su posición de tiling
     let mut all_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
     for window in &state.windows {
+        // to_physical_precise_round: convierte i32 logical a i32 physical sin perder precisión
+        let pos = window.rect.loc.to_physical_precise_round(scale);
         let elems = render_elements_from_surface_tree(
             renderer,
-            window.wl_surface(),
-            Point::<i32, Physical>::from((0, 0)),
+            window.surface.wl_surface(),
+            pos,
             scale,
             1.0,
             Kind::Unspecified,
@@ -77,7 +79,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             .to_physical(scale)
             .to_i32_round();
 
-        // let cursor_pos = cursor_pos + Point::from((100, 100)); // Cursor tester
+        // let cursor_pos = cursor_pos + Point::from((100, 100)); // Cursor
 
         // render_elements_from_surface_tree importa el buffer del cursor
         let cursor_elems = render_elements_from_surface_tree(
@@ -121,7 +123,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let output = state.output.clone();
     for window in &state.windows {
         send_frames_surface_tree(
-            window.wl_surface(),
+            window.surface.wl_surface(),
             &output,
             start_time.elapsed(),
             None,
