@@ -15,6 +15,8 @@ use smithay::utils::{Point, Logical, SERIAL_COUNTER};
 
 use crate::state::Vinland;
 
+use smithay::reexports::wayland_server::Resource;
+
 // seathandler -> define qué tipos reciben foco de cada dispositivo
 impl SeatHandler for Vinland {
     type KeyboardFocus = WlSurface;
@@ -26,7 +28,13 @@ impl SeatHandler for Vinland {
     }
 
     // llamado cuando el foco del teclado cambia entre superficies
-    fn focus_changed(&mut self, _seat: &Seat<Self>, _focused: Option<&WlSurface>) {}
+    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
+        let dh = &self.display_handle;
+        // obtenemos el cliente wayland que es dueño de la superficie
+        let focus = focused.and_then(|s| dh.get_client(s.id()).ok());
+        // sincronizamos el foco del portapapeles/data device con el cliente actual
+        smithay::wayland::selection::data_device::set_data_device_focus(dh, seat, focus);
+    }
 
     // llamado cuando una app pide cambiar la imagen del cursor
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {

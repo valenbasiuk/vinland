@@ -6,7 +6,7 @@ use smithay::wayland::shell::xdg::{
     ToplevelSurface, PopupSurface, PositionerState,
 };
 use smithay::reexports::wayland_server::protocol::wl_seat;
-use smithay::utils::{Serial, SERIAL_COUNTER, Rectangle};
+use smithay::utils::{Serial, SERIAL_COUNTER, Rectangle, Size};
 
 use smithay::reexports::wayland_server::Resource;
 use tracing::info;
@@ -18,18 +18,36 @@ impl XdgShellHandler for Vinland {
     }
 
     // llamado cuando un cliente crea una nueva ventana toplevel
-    // agregamos con rect (0,0,0,0) de placeholder y luego retile() le asigna el rect real
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         info!("nueva ventana: {:?}", surface.wl_surface().id());
 
-        // rect placeholder hasta que retile() calcule el tamaño real
-        self.windows.push(Window {
-            surface,
-            rect: Rectangle::new((0, 0).into(), (0, 0).into()),
-        });
+        // si tiene padre -> floating
+        if surface.parent().is_some() {
+            // calculamos la posición centrada
+            let out_size = self.backend.window_size();
+            let dialog_w = 600;
+            let dialog_h = 500;
+            let x = (out_size.w - dialog_w) / 2;
+            let y = (out_size.h - dialog_h) / 2;
 
-        // retile() asigna posición y tamaño a todas las ventanas y envía configure
-        self.retile();
+            let rect = Rectangle::new((x, y).into(), (dialog_w, dialog_h).into());
+            self.windows.push(Window {
+                surface: surface.clone(),
+                rect,
+            });
+
+            surface.with_pending_state(|s| {
+                s.size = Some(Size::from((dialog_w, dialog_h)));
+            });
+            surface.send_configure();
+        } else {
+            // ventana normal -> la agregamos y recalculamos tiling
+            self.windows.push(Window {
+                surface: surface.clone(),
+                rect: Rectangle::new((0, 0).into(), (0, 0).into()),
+            });
+            self.retile();
+        }
 
         // foco de teclado a la ventana recien abierta
         let serial = SERIAL_COUNTER.next_serial();

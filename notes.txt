@@ -4,3 +4,5 @@ or
 2- to draw everything on physical first and then delete the final physical pixels multiplied by scale
 
 chose the first one because of less logical programming and slightly more optimal.
+
+tiling WM logic -> 

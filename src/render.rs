@@ -93,12 +93,12 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         all_elements.extend(cursor_elems);
     }
 
-    // 3. renderizado final de OpenGL
+    // 3. renderizado de OpenGL
     let mut frame = renderer
         .render(&mut framebuffer, size, Transform::Flipped180)
         .unwrap();
 
-    // fondo violeta oscuro/magenta (el color [0.5, 0.0, 0.5] que elegiste)
+    // fondo violeta oscuro/magenta %
     frame.clear(
         smithay::backend::renderer::Color32F::from([0.5, 0.0, 0.5, 1.0]),
         &[damage],

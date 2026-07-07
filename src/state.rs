@@ -114,45 +114,53 @@ impl Vinland {
     }
 
     // retile -> calcula y envía la nueva disposición tiling a todas las ventanas
-    // layout: 1 ventana = fullscreen, 2+ = master izquierda + stack derecha apilado
+    // ignora diálogos o ventanas que tienen padre (transient/floating)
     pub fn retile(&mut self) {
-        let n = self.windows.len();
-        if n == 0 { return; }
+        // contamos solo las ventanas sin padre
+        let tiled_count = self.windows.iter().filter(|w| w.surface.parent().is_none()).count();
+        if tiled_count == 0 { return; }
 
-        // tamaño total de la pantalla en coordenadas lógicas (scale=1 → lógico == físico)
-        let out_size = self.output.current_mode()
-            .map(|m| m.size)
-            .unwrap_or_else(|| (1920, 1080).into());
+        let out_size = self.backend.window_size();
         let w = out_size.w;
         let h = out_size.h;
 
-        if n == 1 {
-            // única ventana: fullscreen
-            let rect = Rectangle::new((0, 0).into(), (w, h).into());
-            self.windows[0].rect = rect;
-            self.windows[0].surface.with_pending_state(|s| {
-                s.size = Some(Size::from((w, h)));
-            });
-            self.windows[0].surface.send_pending_configure();
-        } else {
-            // master: mitad izquierda, ocupa toda la altura
-            let master_w = w / 2;
-            self.windows[0].rect = Rectangle::new((0, 0).into(), (master_w, h).into());
-            self.windows[0].surface.with_pending_state(|s| {
-                s.size = Some(Size::from((master_w, h)));
-            });
-            self.windows[0].surface.send_pending_configure();
+        let mut tiled_idx = 0;
+        let total_tiled = tiled_count;
 
-            // stack: mitad derecha, dividida en franjas horizontales iguales
-            let stack_w = w - master_w;
-            let stack_h = h / (n as i32 - 1);
-            for (i, win) in self.windows[1..].iter_mut().enumerate() {
-                let y = i as i32 * stack_h;
+        for win in self.windows.iter_mut() {
+            // si tiene padre, dejamos que flote en su rect actual
+            if win.surface.parent().is_some() {
+                continue;
+            }
+
+            if total_tiled == 1 {
+                // única ventana: fullscreen
+                win.rect = Rectangle::new((0, 0).into(), (w, h).into());
+                win.surface.with_pending_state(|s| {
+                    s.size = Some(Size::from((w, h)));
+                });
+                win.surface.send_pending_configure();
+            } else if tiled_idx == 0 {
+                // master: mitad izquierda
+                let master_w = w / 2;
+                win.rect = Rectangle::new((0, 0).into(), (master_w, h).into());
+                win.surface.with_pending_state(|s| {
+                    s.size = Some(Size::from((master_w, h)));
+                });
+                win.surface.send_pending_configure();
+                tiled_idx += 1;
+            } else {
+                // stack: mitad derecha dividida
+                let master_w = w / 2;
+                let stack_w = w - master_w;
+                let stack_h = h / (total_tiled as i32 - 1);
+                let y = (tiled_idx - 1) as i32 * stack_h;
                 win.rect = Rectangle::new((master_w, y).into(), (stack_w, stack_h).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((stack_w, stack_h)));
                 });
                 win.surface.send_pending_configure();
+                tiled_idx += 1;
             }
         }
     }
