@@ -6,7 +6,7 @@ use smithay::wayland::compositor::{CompositorHandler, CompositorState, Composito
 use smithay::wayland::shm::ShmHandler;
 use smithay::wayland::buffer::BufferHandler;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::backend::renderer::utils::on_commit_buffer_handler;
+use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
 
 use crate::state::{Vinland, ClientState};
 
@@ -28,6 +28,24 @@ impl CompositorHandler for Vinland {
         // registra el buffer del cliente en el estado interno de Smithay
         // sin esto, render_elements_from_surface_tree no puede importar el buffer
         on_commit_buffer_handler::<Self>(surface);
+
+        // Si la superficie pertenece a una de nuestras ventanas normales (sin padre),
+        // aún no ha sido tilada (rect de tamaño 0), y el cliente acaba de adjuntar
+        // su primer buffer real de dibujo:
+        let should_retile = self.windows.iter().any(|w| {
+            w.surface.wl_surface() == surface
+                && w.surface.parent().is_none()
+                && w.rect.size.w == 0
+                && w.rect.size.h == 0
+                && with_renderer_surface_state(surface, |renderer_state| {
+                    renderer_state.buffer().is_some()
+                }).unwrap_or(false)
+        });
+
+        if should_retile {
+            self.retile();
+        }
+
         // pedimos redibujo para que el próximo frame muestre el contenido del cliente
         self.backend.window().request_redraw();
     }

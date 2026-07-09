@@ -41,12 +41,12 @@ impl XdgShellHandler for Vinland {
             });
             surface.send_configure();
         } else {
-            // ventana normal -> la agregamos y recalculamos tiling
+            // ventana normal -> la agregamos con rect cero temporalmente
+            // se recalcula el tiling cuando haga su primer commit con buffer
             self.windows.push(Window {
                 surface: surface.clone(),
                 rect: Rectangle::new((0, 0).into(), (0, 0).into()),
             });
-            self.retile();
         }
 
         // foco de teclado a la ventana recien abierta

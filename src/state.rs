@@ -11,6 +11,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::WinitGraphicsBackend;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Point, Logical, Transform, Rectangle, Size};
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use calloop::LoopSignal;
 
 
@@ -117,9 +118,18 @@ impl Vinland {
 
     // retile -> calcula y envía la nueva disposición tiling a todas las ventanas
     // ignora diálogos o ventanas que tienen padre (transient/floating)
+    // también ignora ventanas normales temporales o auxiliares que no tienen buffer
     pub fn retile(&mut self) {
-        // contamos solo las ventanas sin padre
-        let tiled_count = self.windows.iter().filter(|w| w.surface.parent().is_none()).count();
+        // contamos solo las ventanas sin padre que ya tienen un buffer o que ya fueron tiladas (rect w > 0)
+        let tiled_count = self.windows.iter().filter(|w| {
+            w.surface.parent().is_none() && (
+                w.rect.size.w > 0 ||
+                with_renderer_surface_state(w.surface.wl_surface(), |renderer_state| {
+                    renderer_state.buffer().is_some()
+                }).unwrap_or(false)
+            )
+        }).count();
+        
         if tiled_count == 0 { return; }
 
         let out_size = self.backend.window_size();
@@ -132,6 +142,15 @@ impl Vinland {
         for win in self.windows.iter_mut() {
             // si tiene padre, dejamos que flote en su rect actual
             if win.surface.parent().is_some() {
+                continue;
+            }
+
+            // si no tiene rect aún y tampoco tiene buffer, no lo tilamos todavía
+            let has_buffer = with_renderer_surface_state(win.surface.wl_surface(), |renderer_state| {
+                renderer_state.buffer().is_some()
+            }).unwrap_or(false);
+
+            if win.rect.size.w == 0 && !has_buffer {
                 continue;
             }
 
@@ -165,6 +184,7 @@ impl Vinland {
                 tiled_idx += 1;
             }
         }
+
     }
 }
 

@@ -39,6 +39,10 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     // 1. colectar elementos de las ventanas en su posición de tiling
     let mut all_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
     for window in &state.windows {
+        // si la ventana no ha sido tilada aún (rect w/h == 0), no la dibujamos
+        if window.rect.size.w == 0 || window.rect.size.h == 0 {
+            continue;
+        }
         // to_physical_precise_round: convierte i32 logical a i32 physical sin perder precisión
         let pos = window.rect.loc.to_physical_precise_round(scale);
         let elems = render_elements_from_surface_tree(
