@@ -6,7 +6,7 @@ use smithay::wayland::compositor::{CompositorHandler, CompositorState, Composito
 use smithay::wayland::shm::ShmHandler;
 use smithay::wayland::buffer::BufferHandler;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
+use smithay::backend::renderer::utils::on_commit_buffer_handler;
 
 use crate::state::{Vinland, ClientState};
 
@@ -29,18 +29,22 @@ impl CompositorHandler for Vinland {
         // sin esto, render_elements_from_surface_tree no puede importar el buffer
         on_commit_buffer_handler::<Self>(surface);
 
-        // Si la superficie pertenece a una de nuestras ventanas normales (sin padre),
-        // aún no ha sido tilada (rect de tamaño 0), y el cliente acaba de adjuntar
-        // su primer buffer real de dibujo:
-        let should_retile = self.windows.iter().any(|w| {
-            w.surface.wl_surface() == surface
+        // Si la superficie pertenece a una de nuestras ventanas normales (sin padre)
+        // y aún no ha sido configurada/tilada (su rect de tamaño es 0):
+        let mut should_retile = false;
+        for w in self.windows.iter_mut() {
+            if w.surface.wl_surface() == surface
                 && w.surface.parent().is_none()
                 && w.rect.size.w == 0
                 && w.rect.size.h == 0
-                && with_renderer_surface_state(surface, |renderer_state| {
-                    renderer_state.buffer().is_some()
-                }).unwrap_or(false)
-        });
+            {
+                // Establecemos un tamaño temporal de (1, 1) para marcarla como "lista para tilar"
+                // y evitar que vuelva a dispararse en futuros commits
+                w.rect.size = (1, 1).into();
+                should_retile = true;
+                break;
+            }
+        }
 
         if should_retile {
             self.retile();

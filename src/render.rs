@@ -1,5 +1,13 @@
-// render.rs
-// lógica de renderizado de un frame
+/// render.rs
+///
+/// maneja el dibujado de cada cuadro (frame) del compositor en la pantalla.
+/// entries:    el estado global `Vinland`, el cual contiene la lista de ventanas activas (buffers
+///            de Wayland de los clientes), la posición del cursor lógico y el backend de winit/OpenGL.
+///
+/// exits:    dibuja los elementos en el framebuffer de OpenGLES via GlesRenderer
+///           y envía eventos de sincronización (frame callbacks)
+///           a cada cliente para permitirles actualizar y enviar el siguiente cuadro.
+/// ===================================================================================================
 
 use std::time::Instant;
 
