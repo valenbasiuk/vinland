@@ -13,9 +13,12 @@ use smithay::input::{
 use smithay::reexports::wayland_server::protocol::{wl_surface::WlSurface, wl_pointer};
 use smithay::utils::{Point, Logical, SERIAL_COUNTER};
 
+
 use crate::state::Vinland;
 
 use smithay::reexports::wayland_server::Resource;
+use smithay::desktop::utils::under_from_surface_tree;
+use smithay::desktop::WindowSurfaceType;
 
 // seathandler -> define qué tipos reciben foco de cada dispositivo
 impl SeatHandler for Vinland {
@@ -160,17 +163,29 @@ impl Vinland {
 
     // surface_under -> devuelve qué wl_surface está bajo un punto lógico
     // itera las ventanas en orden inverso (la última = la más al frente)
-    // y devuelve la superficie + el offset del cursor dentro de ella
+    // devuelve la sub-superficie exacta + su posición GLOBAL en pantalla
     pub fn surface_under(
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
         for window in self.windows.iter().rev() {
-            // contains verifica si el punto está dentro del rectangle del tile
             if window.rect.to_f64().contains(pos) {
-                // offset = pos del mouse relativa a la esquina sup-izq de la ventana
+                // pos relativa al origen de la ventana (para buscar en el árbol de sub-superficies)
                 let local = pos - window.rect.loc.to_f64();
-                return Some((window.surface.wl_surface().clone(), local));
+
+                // under_from_surface_tree busca la sub-superficie exacta bajo local
+                // y devuelve su offset relativo a la ventana raíz
+                if let Some((subsurface, sub_offset)) = under_from_surface_tree(
+                    window.surface.wl_surface(),
+                    local,
+                    (0, 0),
+                    WindowSurfaceType::ALL,
+                ) {
+                    // la posición global de la sub-superficie =
+                    // origen de la ventana en pantalla + offset dentro de la ventana
+                    let global_pos = window.rect.loc.to_f64() + sub_offset.to_f64();
+                    return Some((subsurface, global_pos));
+                }
             }
         }
         None

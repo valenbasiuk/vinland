@@ -13,13 +13,13 @@ use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Point, Logical, Transform, Rectangle, Size};
 use calloop::LoopSignal;
 
+
 // window -> representa una ventana y su posición/tamaño en pantalla (tiling layout)
 // tener surface y rect juntos = mejor cache locality que tenerlos en vecs separados
 pub struct Window {
     pub surface: ToplevelSurface,
     pub rect:    Rectangle<i32, Logical>,
 }
-
 // vinland -> estado global del compositor
 // todos los handlers de protocolos reciben &mut self de este struct
 pub struct Vinland {
@@ -68,8 +68,15 @@ impl Vinland {
         seat.add_keyboard(XkbConfig::default(), 200, 25).unwrap();
         seat.add_pointer();
 
-        // output virtual
-        // todo: leer el refresh rate real del monitor físico
+        // backend de winit -> renderiza dentro de una ventana del compositor host
+        // se inicializa ANTES del output para poder leer el tamaño real de la ventana
+        let (backend, winit_evt_loop) = smithay::backend::winit::init::<GlesRenderer>()
+            .expect("fallo al inicializar el backend de winit");
+
+        // output: usamos el tamaño real de la ventana Winit para que los clientes
+        // no vean un output distinto al espacio que tienen disponible
+        let actual_size = backend.window_size();
+        let mode = Mode { size: actual_size, refresh: 144000 };
         let output = Output::new(
             "vinland-output".into(),
             PhysicalProperties {
@@ -80,7 +87,6 @@ impl Vinland {
                 serial_number: "".into(),
             },
         );
-        let mode = Mode { size: (1920, 1080).into(), refresh: 60000 };
         output.change_current_state(
             Some(mode),
             Some(Transform::Normal),
@@ -89,10 +95,6 @@ impl Vinland {
         );
         output.set_preferred(mode);
         output.create_global::<Vinland>(&display_handle);
-
-        // backend de winit -> renderiza dentro de una ventana del compositor host
-        let (backend, winit_evt_loop) = smithay::backend::winit::init::<GlesRenderer>()
-            .expect("fallo al inicializar el backend de winit");
 
         let state = Vinland {
             display_handle,

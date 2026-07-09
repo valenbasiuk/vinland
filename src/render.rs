@@ -100,7 +100,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
 
     // fondo violeta oscuro/magenta %
     frame.clear(
-        smithay::backend::renderer::Color32F::from([0.5, 0.0, 0.5, 1.0]),
+        smithay::backend::renderer::Color32F::from([0.0, 0.0, 0.0, 1.0]),
         &[damage],
     ).unwrap();
 
