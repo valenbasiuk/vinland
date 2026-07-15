@@ -3,7 +3,11 @@ replace wl_shell (zxdg_shell_v6) DONE
 frame callbacks DONE
 input capture DONE
 layout manager DONE
+xdg_foreign implementation DONE
 wl_data_device_manager seat fix (no estoy seguro que es esto)
 https://github.com/QubesOS/qubes-gui-rust/tree/a545f4c7a49c2cce70088bcec84e9a2c6174bc40
-xdg_foreign implementation
-chekear anvil
+
+keyboard shortcut
+popup / menu support (new_popup)
+gaps entre ventanas
+GL cursor bug (glTexSubImage2D error cuando el cursor tiene tamaño inesperado)
