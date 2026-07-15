@@ -1,16 +1,15 @@
 // xdg shell handler -> xdg_wm_base, xdg_surface, xdg_toplevel
 // extension de surface q da  propiedades de titulos, estados y arrastre
 
-use smithay::wayland::shell::xdg::{
-    XdgShellHandler, XdgShellState,
-    ToplevelSurface, PopupSurface, PositionerState,
-};
 use smithay::reexports::wayland_server::protocol::wl_seat;
-use smithay::utils::{Serial, SERIAL_COUNTER, Rectangle, Size};
+use smithay::utils::{Rectangle, Serial, Size, SERIAL_COUNTER};
+use smithay::wayland::shell::xdg::{
+    PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+};
 
+use crate::state::{Vinland, Window};
 use smithay::reexports::wayland_server::Resource;
 use tracing::info;
-use crate::state::{Vinland, Window};
 
 impl XdgShellHandler for Vinland {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -56,9 +55,34 @@ impl XdgShellHandler for Vinland {
         keyboard.set_focus(self, Some(wl_surface), serial);
     }
 
+    // llamado por xdg_foreign cuando se establece una relación padre-hijo
+    // post-creación (ej: un file dialog que se abre desde otra app via portal)
+    fn parent_changed(&mut self, surface: ToplevelSurface) {
+        let out_size = self.backend.window_size();
+        let dialog_w = 600;
+        let dialog_h = 500;
+        let x = (out_size.w - dialog_w) / 2;
+        let y = (out_size.h - dialog_h) / 2;
+
+        // buscamos la ventana en nuestra lista (fue agregada con rect 0 por new_toplevel)
+        // y la reposicionamos como floating centrada ahora que sabemos que tiene padre
+        if let Some(win) = self
+            .windows
+            .iter_mut()
+            .find(|w| w.surface.wl_surface() == surface.wl_surface())
+        {
+            win.rect = Rectangle::new((x, y).into(), (dialog_w, dialog_h).into());
+            surface.with_pending_state(|s| {
+                s.size = Some(Size::from((dialog_w, dialog_h)));
+            });
+            surface.send_configure();
+        }
+    }
+
     // llamado cuando una ventana toplevel es cerrada por el cliente
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        self.windows.retain(|w| w.surface.wl_surface() != surface.wl_surface());
+        self.windows
+            .retain(|w| w.surface.wl_surface() != surface.wl_surface());
         info!("ventana cerrada por el cliente");
         // retile() redistribuye el espacio entre las ventanas restantes
         self.retile();
@@ -72,5 +96,6 @@ impl XdgShellHandler for Vinland {
         _surface: PopupSurface,
         _positioner: PositionerState,
         _token: u32,
-    ) {}
+    ) {
+    }
 }
