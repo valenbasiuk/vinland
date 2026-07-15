@@ -1,13 +1,19 @@
-wl_seat DONE
-replace wl_shell (zxdg_shell_v6) DONE
-frame callbacks DONE
-input capture DONE
-layout manager DONE
-xdg_foreign implementation DONE
-wl_data_device_manager seat fix (no estoy seguro que es esto)
-https://github.com/QubesOS/qubes-gui-rust/tree/a545f4c7a49c2cce70088bcec84e9a2c6174bc40
+// VINLAND - COMPOSITOR WAYLAND
+// este archivo trackea solo cosas del compositor.
+// hotkeys, barra, lanzador, etc -> van al DE (proyecto separado)
 
-keyboard shortcut
-popup / menu support (new_popup)
-gaps entre ventanas
-GL cursor bug (glTexSubImage2D error cuando el cursor tiene tamaño inesperado)
+DONE:
+- wl_seat
+- zxdg_shell_v6 -> xdg_shell (estable)
+- frame callbacks
+- input capture (teclado, puntero, scroll)
+- tiling layout manager (master-stack)
+- xdg_foreign (ventanas hijo / dialogs entre procesos)
+
+PENDIENTE:
+- gaps entre ventanas tileadas y bordes de pantalla
+- popup / menu support (new_popup vacio, menus contextuales no funcionan)
+- wl_data_device_manager seat fix (pendiente investigar que es)
+- GL cursor bug (glTexSubImage2D error con cursor de tamaño inesperado)
+- multi-output support (mas de un monitor)
+- damage tracking (no redibujar todo el frame si solo cambio una parte)
