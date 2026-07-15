@@ -1,42 +1,43 @@
 // state.rs
 // struct central de vinland y constructor
 
-use smithay::wayland::compositor::{CompositorState, CompositorClientState};
-use smithay::wayland::shm::ShmState;
-use smithay::wayland::selection::data_device::DataDeviceState;
-use smithay::wayland::shell::xdg::{XdgShellState, ToplevelSurface};
-use smithay::input::{SeatState, Seat, keyboard::XkbConfig, pointer::CursorImageStatus};
-use smithay::output::{Output, PhysicalProperties, Subpixel, Mode, Scale as OutputScale};
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::winit::WinitGraphicsBackend;
-use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{Point, Logical, Transform, Rectangle, Size};
-use smithay::backend::renderer::utils::with_renderer_surface_state;
 use calloop::LoopSignal;
-
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::utils::with_renderer_surface_state;
+use smithay::backend::winit::WinitGraphicsBackend;
+use smithay::input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatState};
+use smithay::output::{Mode, Output, PhysicalProperties, Scale as OutputScale, Subpixel};
+use smithay::reexports::wayland_server::{Display, DisplayHandle};
+use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
+use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellState};
+use smithay::wayland::shm::ShmState;
+use smithay::wayland::xdg_foreign::XdgForeignState; // parentezco apps
 
 // window -> representa una ventana y su posición/tamaño en pantalla (tiling layout)
 // tener surface y rect juntos = mejor cache locality que tenerlos en vecs separados
 pub struct Window {
     pub surface: ToplevelSurface,
-    pub rect:    Rectangle<i32, Logical>,
+    pub rect: Rectangle<i32, Logical>,
 }
 // vinland -> estado global del compositor
 // todos los handlers de protocolos reciben &mut self de este struct
 pub struct Vinland {
-    pub display_handle:    DisplayHandle,
-    pub compositor_state:  CompositorState,
-    pub shm_state:         ShmState,
-    pub xdg_shell_state:   XdgShellState,
-    pub seat_state:        SeatState<Vinland>,
-    pub seat:              Seat<Vinland>,       // todo: se usa cuando implementemos input
-    pub output:            Output,
-    pub backend:           WinitGraphicsBackend<GlesRenderer>,
-    pub loop_signal:       LoopSignal,
-    pub windows:           Vec<Window>,          // ventanas activas del compositor
-    pub pointer_pos:       Point<f64, Logical>, // posición actual del cursor en espacio lógico
+    pub display_handle: DisplayHandle,
+    pub compositor_state: CompositorState,
+    pub shm_state: ShmState,
+    pub xdg_shell_state: XdgShellState,
+    pub seat_state: SeatState<Vinland>,
+    pub seat: Seat<Vinland>, // todo: se usa cuando implementemos input
+    pub output: Output,
+    pub backend: WinitGraphicsBackend<GlesRenderer>,
+    pub loop_signal: LoopSignal,
+    pub windows: Vec<Window>,             // ventanas activas del compositor
+    pub pointer_pos: Point<f64, Logical>, // posición actual del cursor en espacio lógico
     pub data_device_state: DataDeviceState,
-    pub cursor_status:     CursorImageStatus,   // estado/imagen actual del cursor
+    pub cursor_status: CursorImageStatus, // estado/imagen actual del cursor
+    pub xdg_foreign_state: XdgForeignState,
 }
 
 // clientstate -> datos por cliente conectado
@@ -54,14 +55,21 @@ smithay::delegate_dispatch2!(Vinland);
 impl Vinland {
     // new() -> crea e inicializa el compositor completo
     // toma &display para que main.rs pueda moverlo al generic source de calloop
-    pub fn new(display: &Display<Vinland>, loop_signal: LoopSignal) -> (Self, impl calloop::EventSource<Event = smithay::backend::winit::WinitEvent, Metadata = (), Ret = ()>) {
+    pub fn new(
+        display: &Display<Vinland>,
+        loop_signal: LoopSignal,
+    ) -> (
+        Self,
+        impl calloop::EventSource<Event = smithay::backend::winit::WinitEvent, Metadata = (), Ret = ()>,
+    ) {
         let display_handle = display.handle();
 
         // protocolos wayland
         let compositor_state = CompositorState::new::<Vinland>(&display_handle);
-        let shm_state        = ShmState::new::<Vinland>(&display_handle, vec![]);
-        let xdg_shell_state  = XdgShellState::new::<Vinland>(&display_handle);
+        let shm_state = ShmState::new::<Vinland>(&display_handle, vec![]);
+        let xdg_shell_state = XdgShellState::new::<Vinland>(&display_handle);
         let data_device_state = DataDeviceState::new::<Vinland>(&display_handle);
+        let xdg_foreign_state = XdgForeignState::new::<Vinland>(&display_handle);
 
         // seat (inputs generales)
         let mut seat_state = SeatState::new();
@@ -77,7 +85,10 @@ impl Vinland {
         // output: usamos el tamaño real de la ventana Winit para que los clientes
         // no vean un output distinto al espacio que tienen disponible
         let actual_size = backend.window_size();
-        let mode = Mode { size: actual_size, refresh: 144000 };
+        let mode = Mode {
+            size: actual_size,
+            refresh: 144000,
+        };
         let output = Output::new(
             "vinland-output".into(),
             PhysicalProperties {
@@ -107,6 +118,7 @@ impl Vinland {
             output,
             backend,
             loop_signal,
+            xdg_foreign_state,
             windows: Vec::new(),
             pointer_pos: (0.0, 0.0).into(),
             data_device_state,
@@ -121,16 +133,22 @@ impl Vinland {
     // también ignora ventanas normales temporales o auxiliares que no tienen buffer
     pub fn retile(&mut self) {
         // contamos solo las ventanas sin padre que ya tienen un buffer o que ya fueron tiladas (rect w > 0)
-        let tiled_count = self.windows.iter().filter(|w| {
-            w.surface.parent().is_none() && (
-                w.rect.size.w > 0 ||
-                with_renderer_surface_state(w.surface.wl_surface(), |renderer_state| {
-                    renderer_state.buffer().is_some()
-                }).unwrap_or(false)
-            )
-        }).count();
-        
-        if tiled_count == 0 { return; }
+        let tiled_count = self
+            .windows
+            .iter()
+            .filter(|w| {
+                w.surface.parent().is_none()
+                    && (w.rect.size.w > 0
+                        || with_renderer_surface_state(w.surface.wl_surface(), |renderer_state| {
+                            renderer_state.buffer().is_some()
+                        })
+                        .unwrap_or(false))
+            })
+            .count();
+
+        if tiled_count == 0 {
+            return;
+        }
 
         let out_size = self.backend.window_size();
         let w = out_size.w;
@@ -146,9 +164,11 @@ impl Vinland {
             }
 
             // si no tiene rect aún y tampoco tiene buffer, no lo tilamos todavía
-            let has_buffer = with_renderer_surface_state(win.surface.wl_surface(), |renderer_state| {
-                renderer_state.buffer().is_some()
-            }).unwrap_or(false);
+            let has_buffer =
+                with_renderer_surface_state(win.surface.wl_surface(), |renderer_state| {
+                    renderer_state.buffer().is_some()
+                })
+                .unwrap_or(false);
 
             if win.rect.size.w == 0 && !has_buffer {
                 continue;
@@ -184,7 +204,5 @@ impl Vinland {
                 tiled_idx += 1;
             }
         }
-
     }
 }
-
