@@ -131,6 +131,7 @@ impl Vinland {
     // retile -> calcula y envía la nueva disposición tiling a todas las ventanas
     // ignora diálogos o ventanas que tienen padre (transient/floating)
     // también ignora ventanas normales temporales o auxiliares que no tienen buffer
+    const GAP: i32 = 8;
     pub fn retile(&mut self) {
         // contamos solo las ventanas sin padre que ya tienen un buffer o que ya fueron tiladas (rect w > 0)
         let tiled_count = self
@@ -175,28 +176,36 @@ impl Vinland {
             }
 
             if total_tiled == 1 {
-                // única ventana: fullscreen
-                win.rect = Rectangle::new((0, 0).into(), (w, h).into());
+                // única ventana: fullscreen con margen exterior
+                win.rect = Rectangle::new(
+                    (Self::GAP, Self::GAP).into(),
+                    (w - Self::GAP * 2, h - Self::GAP * 2).into(),
+                );
                 win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((w, h)));
+                    s.size = Some(Size::from((w - Self::GAP * 2, h - Self::GAP * 2)));
                 });
                 win.surface.send_pending_configure();
             } else if tiled_idx == 0 {
-                // master: mitad izquierda
-                let master_w = w / 2;
-                win.rect = Rectangle::new((0, 0).into(), (master_w, h).into());
+                // master: mitad izquierda con gaps
+                let master_w = w / 2 - Self::GAP - Self::GAP / 2;
+                win.rect = Rectangle::new(
+                    (Self::GAP, Self::GAP).into(),
+                    (master_w, h - Self::GAP * 2).into(),
+                );
                 win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((master_w, h)));
+                    s.size = Some(Size::from((master_w, h - Self::GAP * 2)));
                 });
                 win.surface.send_pending_configure();
                 tiled_idx += 1;
             } else {
-                // stack: mitad derecha dividida
+                // stack: mitad derecha dividida con gaps
                 let master_w = w / 2;
-                let stack_w = w - master_w;
-                let stack_h = h / (total_tiled as i32 - 1);
-                let y = (tiled_idx - 1) as i32 * stack_h;
-                win.rect = Rectangle::new((master_w, y).into(), (stack_w, stack_h).into());
+                let stack_x = master_w + Self::GAP / 2;
+                let stack_w = w - stack_x - Self::GAP;
+                let slot_h = h / (total_tiled as i32 - 1);
+                let stack_h = slot_h - Self::GAP;
+                let y = (tiled_idx - 1) as i32 * slot_h + Self::GAP;
+                win.rect = Rectangle::new((stack_x, y).into(), (stack_w, stack_h).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((stack_w, stack_h)));
                 });
