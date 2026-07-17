@@ -47,6 +47,10 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     // 1. colectar elementos de las ventanas en su posición de tiling
     let mut all_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
     for window in &state.windows {
+        // si la ventana está minimizada, no la dibujamos
+        if window.minimized {
+            continue;
+        }
         // si la ventana no ha sido tilada aún (rect w/h == 0), no la dibujamos
         if window.rect.size.w == 0 || window.rect.size.h == 0 {
             continue;

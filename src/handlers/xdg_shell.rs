@@ -33,6 +33,7 @@ impl XdgShellHandler for Vinland {
             self.windows.push(Window {
                 surface: surface.clone(),
                 rect,
+                minimized: false,
             });
 
             surface.with_pending_state(|s| {
@@ -45,6 +46,7 @@ impl XdgShellHandler for Vinland {
             self.windows.push(Window {
                 surface: surface.clone(),
                 rect: Rectangle::new((0, 0).into(), (0, 0).into()),
+                minimized: false,
             });
         }
 
@@ -86,6 +88,19 @@ impl XdgShellHandler for Vinland {
         info!("ventana cerrada por el cliente");
         // retile() redistribuye el espacio entre las ventanas restantes
         self.retile();
+    }
+
+    // llamado cuando el cliente solicita minimizar la ventana
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        info!("solicitud de minimizar ventana");
+        if let Some(win) = self
+            .windows
+            .iter_mut()
+            .find(|w| w.surface.wl_surface() == surface.wl_surface())
+        {
+            win.minimized = true;
+            self.retile();
+        }
     }
 
     // popups: ventanas con padre (menús contextuales, dropdowns, etc.)

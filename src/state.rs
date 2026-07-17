@@ -20,6 +20,7 @@ use smithay::wayland::xdg_foreign::XdgForeignState; // parentezco apps
 pub struct Window {
     pub surface: ToplevelSurface,
     pub rect: Rectangle<i32, Logical>,
+    pub minimized: bool,
 }
 // vinland -> estado global del compositor
 // todos los handlers de protocolos reciben &mut self de este struct
@@ -133,12 +134,13 @@ impl Vinland {
     // también ignora ventanas normales temporales o auxiliares que no tienen buffer
     const GAP: i32 = 8;
     pub fn retile(&mut self) {
-        // contamos solo las ventanas sin padre que ya tienen un buffer o que ya fueron tiladas (rect w > 0)
+        // contamos solo las ventanas sin padre que no estén minimizadas y que ya tengan un buffer o ya fueron tiladas (rect w > 0)
         let tiled_count = self
             .windows
             .iter()
             .filter(|w| {
-                w.surface.parent().is_none()
+                !w.minimized
+                    && w.surface.parent().is_none()
                     && (w.rect.size.w > 0
                         || with_renderer_surface_state(w.surface.wl_surface(), |renderer_state| {
                             renderer_state.buffer().is_some()
@@ -159,6 +161,11 @@ impl Vinland {
         let total_tiled = tiled_count;
 
         for win in self.windows.iter_mut() {
+            // si está minimizada, no la tilamos
+            if win.minimized {
+                continue;
+            }
+
             // si tiene padre, dejamos que flote en su rect actual
             if win.surface.parent().is_some() {
                 continue;
@@ -200,7 +207,7 @@ impl Vinland {
             } else {
                 // stack: mitad derecha dividida con gaps
                 let master_w = w / 2;
-                let stack_x = master_w + Self::GAP / 2;
+                let stack_x = master_w + Self::GAP;
                 let stack_w = w - stack_x - Self::GAP;
                 let slot_h = h / (total_tiled as i32 - 1);
                 let stack_h = slot_h - Self::GAP;

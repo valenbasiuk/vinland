@@ -169,6 +169,9 @@ impl Vinland {
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
         for window in self.windows.iter().rev() {
+            if window.minimized {
+                continue;
+            }
             if window.rect.to_f64().contains(pos) {
                 // pos relativa al origen de la ventana (para buscar en el árbol de sub-superficies)
                 let local = pos - window.rect.loc.to_f64();
