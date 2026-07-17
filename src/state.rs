@@ -103,7 +103,7 @@ impl Vinland {
         output.change_current_state(
             Some(mode),
             Some(Transform::Normal),
-            Some(OutputScale::Integer(1)),
+            Some(OutputScale::Fractional(backend.scale_factor())),
             Some((0, 0).into()),
         );
         output.set_preferred(mode);
@@ -153,9 +153,15 @@ impl Vinland {
             return;
         }
 
-        let out_size = self.backend.window_size();
-        let w = out_size.w;
-        let h = out_size.h;
+        let scale_factor = self.backend.scale_factor();
+        let out_size = self
+            .backend
+            .window_size()
+            .to_f64()
+            .to_logical(scale_factor)
+            .to_i32_round();
+        let w: i32 = out_size.w;
+        let h: i32 = out_size.h;
 
         let mut tiled_idx = 0;
         let total_tiled = tiled_count;

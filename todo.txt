@@ -1,19 +1,441 @@
 // VINLAND - COMPOSITOR WAYLAND
 // este archivo trackea solo cosas del compositor.
 // hotkeys, barra, lanzador, etc -> van al DE (proyecto separado)
+//
+// CONVENCIÓN DE SECCIONES:
+//   DONE      -> ya implementado y funcionando
+//   PENDIENTE -> bug o feature a terminar, sin estructura nueva
+//   CONFIG    -> cosas hardcodeadas HOY que deben moverse a un struct Config
+//   FEATURE   -> features nuevas que vale la pena meter en un compositor moderno
+//   PROTOCOLO -> extensiones Wayland estándar para soportar
+//   ARCH      -> cambios estructurales / refactors necesarios
 
-DONE:
+// ==============================================================================
+// DONE
+// ==============================================================================
+
 - wl_seat
 - zxdg_shell_v6 -> xdg_shell (estable)
 - frame callbacks
 - input capture (teclado, puntero, scroll)
 - tiling layout manager (master-stack)
 - xdg_foreign (ventanas hijo / dialogs entre procesos)
+- cursor surface (apps que dibujan su propio cursor, ej: browser)
+- minimizar ventanas
 
-PENDIENTE:
-- gaps entre ventanas tileadas y bordes de pantalla
-- popup / menu support (new_popup vacio, menus contextuales no funcionan)
-- wl_data_device_manager seat fix (pendiente investigar que es)
-- GL cursor bug (glTexSubImage2D error con cursor de tamaño inesperado)
-- multi-output support (mas de un monitor)
-- damage tracking (no redibujar todo el frame si solo cambio una parte)
+// ==============================================================================
+// PENDIENTE (bugs / features incompletas)
+// ==============================================================================
+
+- popup / menu support (new_popup vacío, menús contextuales no funcionan)
+  * hay que manejar xdg_popup correctamente: position, grab, dismiss
+  * XdgShellHandler::grab() está vacío -> cuando una app pide grab de popup
+    el compositor debe pasarle el grab implícito del pointer al popup
+  * hay que renderizar los popups encima de la ventana padre
+
+- wl_data_device_manager seat fix
+  * drag-and-drop no funciona correctamente todavía
+  * copy-paste básico parece funcionar pero revisar edge cases
+
+- GL cursor bug: glTexSubImage2D error con cursor de tamaño inesperado
+  * se da cuando el cursor de la app tiene dimensiones raras
+  * revisar cómo se importa el buffer del cursor en render.rs
+
+- multi-output support (más de un monitor)
+  * el compositor hoy solo maneja un Output hardcodeado ("vinland-output")
+  * necesita detectar monitores vía udev/DRM y crear un Output por monitor
+  * el layout de tiling tiene que saber en qué output vive cada ventana
+
+- damage tracking (no redibujar todo el frame si solo cambió una parte)
+  * hoy frame.clear() siempre limpia el framebuffer entero
+  * smithay tiene DamageTracker -> usarlo para pasar damage_rects reales
+  * relacionado con multi-output: cada output tiene su propio damage
+
+// ==============================================================================
+// CONFIG — valores hardcodeados HOY que deben vivir en un struct Config
+//
+// OBJETIVO: crear src/config.rs con un struct Config cargado desde
+// $XDG_CONFIG_HOME/vinland/config.toml (fallback ~/.config/vinland/config.toml)
+// Los valores de Config deben poder recargarse en caliente (SIGHUP o inotify).
+// Crates recomendados: serde + toml + notify (para inotify hot-reload)
+//
+// REFERENCIA RÁPIDA DE HARDCODES EN EL CÓDIGO HOY:
+//   src/state.rs:
+//     const GAP: i32 = 8                   -> Config.tiling.gap
+//     refresh: 144_000                      -> Config.output.refresh_rate
+//     "vinland-output"                      -> Config.output.name
+//     XkbConfig::default()                  -> Config.keyboard.xkb
+//     repeat delay 200, repeat rate 25      -> Config.keyboard.repeat_delay/rate
+//     (0,0) output position                 -> Config.output.position
+//     w/2 master split ratio                -> Config.tiling.master_ratio
+//     layout siempre MasterStack            -> Config.tiling.layout
+//   src/render.rs:
+//     [0.0, 0.0, 0.0, 1.0] fondo negro     -> Config.background.color / wallpaper
+//     damage siempre pantalla entera        -> damage tracking real
+//   src/handlers/xdg_shell.rs:
+//     dialog_w = 600, dialog_h = 500        -> Config.floating.default_dialog_size (x2)
+//     diálogos siempre al centro            -> Config.floating.default_position
+//   src/main.rs:
+//     tracing_subscriber::fmt::init()       -> Config.log.level
+// ==============================================================================
+
+[TILING]
+- GAP: i32 = 8
+  * const GAP en state.rs
+  * separar en Config.tiling.gap_inner (entre ventanas) y Config.tiling.gap_outer (borde)
+
+- layout por defecto
+  * siempre MasterStack, no cambiable sin recompilar
+  * Config.tiling.layout: enum { MasterStack, Monocle, Columns, Spiral, ... }
+
+- split ratio master/stack
+  * hardcodeado como w/2 en retile()
+  * Config.tiling.master_ratio: f32 (default 0.5)
+
+- número de masters
+  * siempre 1
+  * Config.tiling.master_count: u32 (default 1)
+
+[VENTANAS FLOTANTES]
+- tamaño por defecto de diálogos (ventanas con padre)
+  * xdg_shell.rs: dialog_w = 600, dialog_h = 500 (hardcodeado 2 veces: new_toplevel y parent_changed)
+  * Config.floating.default_dialog_size: (u32, u32)
+
+- reglas por clase de ventana (window rules)
+  * ninguna ventana puede ser forzada a flotar o a un tamaño fijo desde config
+  * Config.rules: Vec<WindowRule>
+    WindowRule { app_id: String, title_regex: Option<String>, action: RuleAction }
+    RuleAction: Float | Tile | FloatSize(w,h) | Workspace(u8) | Opacity(f32) | ...
+
+[OUTPUT / MONITOR]
+- refresh rate
+  * state.rs: refresh: 144_000 (mHz, hardcodeado)
+  * Config.output.refresh_rate: u32 (o Auto desde modo preferido del monitor)
+
+- nombre del output / make / model
+  * "vinland-output", "Vinland", "Virtual" hardcodeados en state.rs
+  * en winit es siempre virtual; en DRM debe venir de EDID
+
+- posición del output
+  * (0, 0) hardcodeado
+  * con multi-monitor: Config.outputs: Vec<OutputConfig { name, pos, scale, transform }>
+
+- scale factor
+  * hoy viene de backend.scale_factor() sin posibilidad de forzarlo
+  * Config.output.scale: Option<f64> (None = autodetect, Some(x) = forzado)
+
+- transform (rotación del output)
+  * Transform::Normal hardcodeado
+  * Config.output.transform: enum { Normal, R90, R180, R270, Flipped, ... }
+
+[TECLADO]
+- keymap / layout
+  * XkbConfig::default() en state.rs -> sin layout configurado
+  * Config.keyboard.layout: String (ej: "es", "us", "latam")
+  * Config.keyboard.variant: String
+  * Config.keyboard.model: String
+  * Config.keyboard.options: Option<String> (ej: "caps:escape,compose:ralt")
+
+- repeat delay y repeat rate
+  * seat.add_keyboard(XkbConfig::default(), 200, 25) -> 200 y 25 hardcodeados
+  * Config.keyboard.repeat_delay: u32 = 200 (ms antes de comenzar a repetir)
+  * Config.keyboard.repeat_rate: u32 = 25 (chars/segundo mientras se mantiene)
+
+[CURSOR]
+- tema del cursor del sistema (xcursor theme)
+  * hoy el cursor nativo usa CursorImageStatus::default_named() (toma el del host)
+  * Config.cursor.theme: String (ej: "Adwaita", "breeze", "Bibata-Modern-Ice")
+  * Config.cursor.size: u32 (ej: 24, 32, 48)
+  * implementación: xcursor loading: leer $XCURSOR_THEME/$XCURSOR_SIZE o config,
+    cargar PNGs de /usr/share/icons/<theme>/cursors/ via xcursor crate,
+    subir como textura GL, dibujar en render.rs igual que el cursor de app
+
+- cursor personalizado del usuario (imagen custom)
+  * Config.cursor.custom_path: Option<PathBuf>
+  * si está presente, cargarlo como textura GL en vez del theme
+  * formatos: PNG (con punto de hotspot configurable), xcur, SVG (rasterizar)
+
+- hotspot del cursor custom
+  * Config.cursor.custom_hotspot: (u32, u32) (default (0, 0))
+
+- cursor animado (xcursor con frames)
+  * el formato xcursor soporta animaciones -> leer frame delay y ciclar en render
+
+[FONDO DE PANTALLA / WALLPAPER]
+- color de fondo
+  * render.rs: frame.clear([0.0, 0.0, 0.0, 1.0], ...) negro sólido hardcodeado
+  * Config.background.color: [f32; 4]
+
+- imagen de fondo (wallpaper)
+  * Config.background.wallpaper: Option<WallpaperConfig>
+    WallpaperConfig {
+        path: PathBuf,
+        mode: ScaleMode,   // Fit | Fill | Stretch | Center | Tile
+        filter: FilterMode, // Nearest | Linear
+    }
+  * implementación: image crate para cargar PNG/JPEG/WebP -> textura GL ->
+    quad antes de superficies de las apps
+  * hot-reload: inotify en el path -> recargar textura sin reiniciar compositor
+
+- wallpaper por output
+  * con multi-monitor: Config.outputs[i].wallpaper overrides el global
+
+- protocol wp_background
+  * FUTURO: permitir que una app gestione el wallpaper (como swaybg con layer-shell)
+  * esto requiere implementar zwlr_layer_shell primero
+
+[DECORACIONES DE VENTANA (CSD vs SSD)]
+- hoy el compositor no pinta ninguna decoración (ni titlebar, ni bordes)
+- apps usan CSD si quieren; sin protocolo de negociación
+
+- protocolo: xdg-decoration-unstable-v1 (negociación CSD/SSD)
+  * smithay: XdgDecorationState + XdgDecorationHandler
+  * Config.decoration.mode: enum { ClientSide, ServerSide, Auto }
+
+- borde de ventana activa / inactiva (SSD)
+  * Config.decoration.border_width: u32
+  * Config.decoration.border_color_active: [f32; 4]
+  * Config.decoration.border_color_inactive: [f32; 4]
+
+- titlebar (SSD)
+  * Config.decoration.titlebar_height: u32
+  * Config.decoration.titlebar_font: String
+  * Config.decoration.titlebar_font_size: f32
+  * Config.decoration.titlebar_bg_active: [f32; 4]
+  * Config.decoration.titlebar_bg_inactive: [f32; 4]
+  * Config.decoration.titlebar_fg_active: [f32; 4]
+  * Config.decoration.titlebar_fg_inactive: [f32; 4]
+  * botones: cerrar, minimizar, maximizar -> posición configurable (left/right)
+
+[ANIMACIONES / EFECTOS VISUALES]
+- animaciones de apertura / cierre de ventanas
+  * Config.animations.enabled: bool
+  * Config.animations.window_open: AnimCfg { kind: Fade|Scale|SlideIn, duration_ms: u32 }
+  * Config.animations.window_close: AnimCfg
+  * Config.animations.window_retile: AnimCfg (interpolación del rect al retilear)
+  * implementación: estado "animating" en Window, interpolar rect en render frame-by-frame
+
+- crossfade al cambiar wallpaper
+  * dos texturas GL: old_wallpaper + new_wallpaper, blend con alpha creciente
+
+- blur de fondo para flotantes / popups
+  * FUTURO: framebuffer adicional para capturar fondo antes de pintar la ventana
+  * shader de blur gaussiano (horizontal pass + vertical pass)
+
+[EFECTOS GL / COMPOSITOR EFFECTS]
+- rounded corners en ventanas
+  * Config.effects.corner_radius: u32 (0 = sin redondeo)
+  * implementación: shader GL custom en GlesRenderer que descarta fragmentos fuera del radio
+  * smithay GlesRenderer soporta custom shaders con GlesPixelProgram
+
+- sombras de ventana
+  * Config.effects.shadow_enabled: bool
+  * Config.effects.shadow_radius: f32
+  * Config.effects.shadow_color: [f32; 4]
+  * Config.effects.shadow_offset: (f32, f32)
+  * implementación: quad difuminado detrás de cada ventana antes de pintarla
+
+- transparencia / opacity global por ventana
+  * Config.effects.inactive_opacity: f32 (0.0..1.0, default 1.0)
+  * protocolo wp_alpha_modifier_v1 (smithay lo tiene)
+
+[GESTOS TÁCTILES]
+- seat.rs: todos los touch events caen en _ => {} (ignorados completamente)
+  * Config.touch.swipe_3_finger_left: Action
+  * Config.touch.swipe_3_finger_right: Action
+  * Config.touch.swipe_3_finger_up: Action
+  * Config.touch.swipe_3_finger_down: Action
+  * Config.touch.pinch_in: Action
+  * Config.touch.pinch_out: Action
+  * Action: enum { SwitchWorkspace(i32), CloseWindow, ToggleScratchpad, ... }
+
+// ==============================================================================
+// FEATURE — cosas nuevas que vale la pena implementar
+// ==============================================================================
+
+[WORKSPACES / ESCRITORIOS VIRTUALES]
+- hoy todas las ventanas viven en un único espacio plano
+- agregar Vec<Workspace> al state, cada Workspace con su Vec<Window>
+- Config.workspaces.count: u32 (default 9)
+- Config.workspaces.layout: puede ser diferente por workspace
+- transición al cambiar workspace: animación slide/fade
+- protocolo ext-workspace-v1 para que paneles lo consulten
+
+[SCREENSHOT / SCREENCAST]
+- zwlr_screencopy_manager_v1
+  * permite a grim, slurp, obs capturar el framebuffer
+  * smithay tiene screencopy support (feature "wayland_frontend")
+- xdg-desktop-portal screencast
+  * para Firefox/Chrome compartir pantalla por WebRTC
+
+[IDLE / DPMS]
+- ext-idle-notify-v1 (smithay tiene ExtIdleNotifierState)
+  * avisar a apps (swayidle) cuando usuario está idle N segundos
+  * Config.idle.timeout_sec: u32
+- DPMS: apagar el output cuando idle
+  * DRM: deshabilitar CRTC; Winit: no aplica directamente
+
+[INPUT METHODS / IME]
+- protocolo zwp_text_input_v3
+  * para teclados en pantalla y métodos de entrada (fcitx5, ibus)
+  * smithay: TextInputManagerState
+
+[TABLET / STYLUS]
+- protocolo zwp_tablet_manager_v2
+  * tabletas gráficas (Wacom, Huion, XP-Pen)
+  * smithay: TabletManagerState
+
+[WLROOTS LAYER SHELL] (CRÍTICO PARA EL DE)
+- protocolo zwlr_layer_shell_v1
+  * NECESARIO para: bars, docks, notificaciones, fondos propios
+  * layers: Background, Bottom, Top, Overlay
+  * smithay: WlrLayerShellState + WlrLayerShellHandler
+  * hay que agregar layer surfaces al render loop, ordenadas por layer
+  * z-order: Background < Bottom < tiled windows < floating < Top < Overlay
+
+[OUTPUT MANAGEMENT]
+- zwlr_output_manager_v1 (wlr-output-management)
+  * kanshi, wlr-randr pueden configurar outputs en runtime
+  * cambiar resolución, posición, escala, rotación sin reiniciar
+
+[XWAYLAND] (ya en Cargo.toml como feature)
+- smithay tiene XWayland support completo
+- inicializar XWayland en state.rs, agregar XWayland surfaces al render
+- Config.xwayland.enabled: bool (default true)
+- Config.xwayland.scale_factor: Option<f64> (override para apps X11)
+- necesario para: Steam, Wine, algunas Electron apps antiguas
+
+[FRACTIONAL SCALING / HIGH DPI]
+- smithay soporta Scale::Fractional
+- protocolo wp_fractional_scale_v1 para que apps ajusten su resolución
+- Config.output.scale: f64 (1.0, 1.25, 1.5, 2.0, etc.)
+
+[PRESENTATION TIME]
+- protocolo wp_presentation (smithay: PresentationState)
+  * video players saben exactamente cuándo su frame fue mostrado
+  * necesario para low-latency video playback sincronizado
+
+[VIEWPORTER]
+- protocolo wp_viewporter (smithay: ViewporterState)
+  * scaling y cropping de buffers en el compositor
+  * necesario para HiDPI y video players
+
+[LINUX DMABUF] (crítico para performance)
+- protocolo zwp_linux_dmabuf_v1 (smithay: DmabufState)
+  * zero-copy buffer sharing GPU <-> apps
+  * sin esto: copia extra del framebuffer por frame en Firefox, Chromium, etc.
+  * Cargo.toml ya tiene "backend_drm" -> DmabufState necesita GBM allocator
+  * en winit backend: limitado; en DRM backend: necesario y muy importante
+
+[COLOR MANAGEMENT / HDR]
+- protocolo xx_color_manager_v4 / wp_color_management_v1 (draft)
+  * HDR, wide color gamut
+  * smithay está agregando soporte
+  * FUTURO, no urgente
+
+[SECURITY CONTEXT]
+- protocolo wp_security_context_v1
+  * sandboxed clients (flatpak, snap) presentan credentials al compositor
+  * el compositor decide qué protocolos exponer según sandbox level
+
+// ==============================================================================
+// PROTOCOLO — por orden de prioridad
+// ==============================================================================
+
+ALTA PRIORIDAD (sin estas, el DE es incompleto):
+- zwlr_layer_shell_v1              -> bars, docks, fondos propios (CRÍTICO)
+- zwlr_screencopy_manager_v1       -> screenshot, screencast
+- ext-idle-notify-v1               -> idle detection
+- zwp_linux_dmabuf_v1              -> zero-copy GPU buffers (performance)
+- xdg-decoration-unstable-v1       -> negociar CSD/SSD
+- wp_fractional_scale_v1           -> HiDPI correcto
+- wp_viewporter                    -> scaling/crop de buffers
+- wp_presentation                  -> presentation time (video)
+- ext-workspace-v1                 -> workspaces (si se implementan)
+
+MEDIA PRIORIDAD:
+- zwp_text_input_v3                -> IME / teclado en pantalla
+- zwp_tablet_manager_v2            -> tabletas gráficas
+- zwlr_output_manager_v1           -> output management en runtime
+- xdg_activation_v1                -> focus stealing prevention
+- wp_alpha_modifier_v1             -> transparencia por ventana
+- xdg_output_manager_v1            -> info extendida de output para apps
+
+BAJA PRIORIDAD / FUTURO:
+- wp_security_context_v1           -> sandboxed clients
+- xx_color_manager_v4              -> HDR / wide color gamut
+- zwp_pointer_gestures_v1          -> pinch/swipe multitouch via libinput
+- zwp_relative_pointer_v1          -> mouse relativo (juegos FPS)
+- zwp_pointer_constraints_v1       -> confinar cursor (juegos)
+- zwp_keyboard_shortcuts_inhibit_manager_v1 -> capturar TODAS las teclas (juegos)
+
+// ==============================================================================
+// ARCH — refactors estructurales necesarios
+// ==============================================================================
+
+[CONFIG SYSTEM]
+- crear src/config.rs con struct Config completo
+- cargarlo desde TOML con serde + toml crates
+- ruta: $XDG_CONFIG_HOME/vinland/config.toml
+- hot-reload con notify crate (inotify): suscribirse a cambios del archivo,
+  aplicar campos que se puedan cambiar en caliente sin reiniciar
+
+[BACKEND ABSTRACTO]
+- hoy fijo a WinitGraphicsBackend<GlesRenderer>
+- para hardware real se necesita DRM/KMS (smithay UdevBackend)
+- extraer trait Backend { ... } o enum WinitBackend | DrmBackend
+- Cargo.toml ya tiene "backend_drm" y "backend_udev"
+- UdevBackend loop: detectar GPU con udev, abrir DRM device, GbmAllocator,
+  EglDisplay sobre GBM, GlesRenderer
+
+[RENDER PIPELINE]
+- mover lógica de render a un struct Renderer propio
+- abstraer el "frame" para facilitar damage tracking real
+- separar: collect_elements() | clear_background() | draw_layer(Background) |
+  draw_layer(Bottom) | draw_windows() | draw_layer(Top) | draw_cursor() | draw_layer(Overlay)
+- considerar smithay::desktop::Space para z-ordering y damage automático
+
+[WINDOW TREE]
+- hoy windows: Vec<Window> es un vec plano sin jerarquía
+- con layer shell, popups y xwayland se necesita estructura jerárquica:
+  Vec<LayerSurface> + Vec<Window> + Vec<XwaylandSurface>
+  o usar smithay::desktop::Space (maneja z-ordering, damage, surface tree)
+
+[LOGGING]
+- hoy: tracing_subscriber::fmt::init() solo stdout
+- agregar file logging: tracing-appender hacia ~/.local/share/vinland/vinland.log
+- log rotation (tracing-appender::rolling)
+- Config.log.level: enum { Error, Warn, Info, Debug, Trace }
+
+[IPC]
+- mecanismo para que el DE (barras, lanzadores) hable con el compositor
+- preferir Unix socket + JSON (similar a sway IPC, sin depender de D-Bus)
+- mensajes básicos:
+    list_windows -> [{app_id, title, workspace, focused, rect}]
+    focus_window(id)
+    close_window(id)
+    move_to_workspace(id, ws)
+    get_config -> JSON del Config actual
+    reload_config
+    screenshot(output) -> bytes
+    subscribe(event_type) -> stream de eventos
+
+// ==============================================================================
+// PRIORIDAD SUGERIDA DE IMPLEMENTACIÓN (para próximas IAs):
+//
+//  1. Config system (src/config.rs, TOML, hot-reload)
+//  2. Mover todos los hardcodes a Config (GAP, refresh, dialog_size, xkb, etc.)
+//  3. zwlr_layer_shell_v1 (para poder tener barra de tareas)
+//  4. Wallpaper / background image (textura GL + ScaleMode)
+//  5. Workspaces (Vec<Workspace> en state)
+//  6. Popup / menu support completar (xdg_popup grab)
+//  7. DRM backend (correr fuera de un compositor host)
+//  8. zwlr_screencopy + utilidad de screenshot
+//  9. Decoraciones SSD opcionales (xdg-decoration + borde GL)
+// 10. Cursor theme (xcursor crate + textura GL custom)
+// 11. Damage tracking real (DamageTracker de smithay)
+// 12. Animaciones de ventana (lerp en render.rs)
+// 13. Rounded corners + sombras (shaders GL)
+// 14. Protocolos restantes de alta/media prioridad
+// 15. XWayland (habilitar la feature que ya está en Cargo.toml)
+// ==============================================================================

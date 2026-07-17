@@ -35,7 +35,7 @@ use crate::state::Vinland;
 pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let size   = state.backend.window_size();
     let damage = smithay::utils::Rectangle::new((0, 0).into(), size);
-    let scale  = Scale::from(1.0);
+    let scale  = Scale::from(state.backend.scale_factor());
 
     // ocultar el cursor del host (Winit) si estamos dibujando un cursor personalizado
     let cursor_visible = !matches!(state.cursor_status, CursorImageStatus::Surface(_));
