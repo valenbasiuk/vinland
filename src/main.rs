@@ -11,6 +11,7 @@ use smithay::wayland::compositor::CompositorClientState;
 use std::time::Instant;
 use tracing::info;
 
+mod config;
 mod handlers;
 mod render;
 mod state;
@@ -25,9 +26,11 @@ fn main() {
     let mut event_loop: EventLoop<Vinland> = EventLoop::try_new().unwrap();
     let display: Display<Vinland> = Display::new().unwrap();
 
+    let config = config::load();
+
     // vinland::new -> inicializa todos los protocolos wayland y el backend
     // &display: display queda en main para pasarlo al generic source de calloop
-    let (mut state, winit_evt_loop) = Vinland::new(&display, event_loop.get_signal());
+    let (mut state, winit_evt_loop) = Vinland::new(&display, event_loop.get_signal(), config);
     info!("compositor inicializado");
 
     let loop_handle = event_loop.handle();
