@@ -8,10 +8,10 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    pub tiling:     TilingConfig,
-    pub keyboard:   KeyboardConfig,
+    pub tiling: TilingConfig,
+    pub keyboard: KeyboardConfig,
     pub background: BackgroundConfig,
-    pub floating:   FloatingConfig,
+    pub floating: FloatingConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -24,10 +24,10 @@ pub struct TilingConfig {
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct KeyboardConfig {
-    pub layout:       String,         // ej: "es", "us", "latam"
-    pub options:      Option<String>, // ej: "caps:escape"
-    pub repeat_delay: i32,            // ms hasta empezar a repetir
-    pub repeat_rate:  i32,            // pulsaciones/segundo al mantener
+    pub layout: String,          // ej: "es", "us", "latam"
+    pub options: Option<String>, // ej: "caps:escape"
+    pub repeat_delay: i32,       // ms hasta empezar a repetir
+    pub repeat_rate: i32,        // pulsaciones/segundo al mantener
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,7 +39,7 @@ pub struct BackgroundConfig {
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct FloatingConfig {
-    pub dialog_width:  i32,
+    pub dialog_width: i32,
     pub dialog_height: i32,
 }
 
@@ -47,24 +47,76 @@ pub struct FloatingConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            tiling:     TilingConfig::default(),
-            keyboard:   KeyboardConfig::default(),
+            tiling: TilingConfig::default(),
+            keyboard: KeyboardConfig::default(),
             background: BackgroundConfig::default(),
-            floating:   FloatingConfig::default(),
+            floating: FloatingConfig::default(),
         }
     }
 }
 impl Default for TilingConfig {
-    fn default() -> Self { Self { gap: 8, master_ratio: 0.5 } }
+    fn default() -> Self {
+        Self {
+            gap: 8,
+            master_ratio: 0.5,
+        }
+    }
 }
 impl Default for KeyboardConfig {
     fn default() -> Self {
-        Self { layout: String::new(), options: None, repeat_delay: 200, repeat_rate: 25 }
+        Self {
+            layout: String::new(),
+            options: None,
+            repeat_delay: 200,
+            repeat_rate: 25,
+        }
     }
 }
 impl Default for BackgroundConfig {
-    fn default() -> Self { Self { color: [0.0, 0.0, 0.0, 1.0] } }
+    fn default() -> Self {
+        Self {
+            color: [0.0, 0.0, 0.0, 1.0],
+        }
+    }
 }
 impl Default for FloatingConfig {
-    fn default() -> Self { Self { dialog_width: 600, dialog_height: 500 } }
+    fn default() -> Self {
+        Self {
+            dialog_width: 600,
+            dialog_height: 500,
+        }
+    }
+}
+
+// load() $XDG_CONFIG_HOME/vinland/config.toml
+// si no existe o falla el parseo, devuelve Config::default() sin crashear
+pub fn load() -> Config {
+    let path = {
+        let base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::var_os("HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join(".config")
+            });
+        base.join("vinland").join("config.toml")
+    };
+
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Config::default(),
+        Err(e) => {
+            eprintln!("vinland: no se pudo leer {:?}: {}", path, e);
+            return Config::default();
+        }
+    };
+
+    match toml::from_str::<Config>(&text) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("vinland: error en config.toml: {}", e);
+            Config::default()
+        }
+    }
 }
