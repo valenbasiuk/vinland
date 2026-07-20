@@ -15,6 +15,8 @@ use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellState};
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::xdg_foreign::XdgForeignState; // parentezco apps
 
+use crate::config::Config;
+
 // window -> representa una ventana y su posición/tamaño en pantalla (tiling layout)
 // tener surface y rect juntos = mejor cache locality que tenerlos en vecs separados
 pub struct Window {
@@ -30,15 +32,16 @@ pub struct Vinland {
     pub shm_state: ShmState,
     pub xdg_shell_state: XdgShellState,
     pub seat_state: SeatState<Vinland>,
-    pub seat: Seat<Vinland>, // todo: se usa cuando implementemos input
+    pub seat: Seat<Vinland>,
     pub output: Output,
     pub backend: WinitGraphicsBackend<GlesRenderer>,
     pub loop_signal: LoopSignal,
-    pub windows: Vec<Window>,             // ventanas activas del compositor
-    pub pointer_pos: Point<f64, Logical>, // posición actual del cursor en espacio lógico
+    pub windows: Vec<Window>,
+    pub pointer_pos: Point<f64, Logical>,
     pub data_device_state: DataDeviceState,
-    pub cursor_status: CursorImageStatus, // estado/imagen actual del cursor
+    pub cursor_status: CursorImageStatus,
     pub xdg_foreign_state: XdgForeignState,
+    pub config: Config,
 }
 
 // clientstate -> datos por cliente conectado
@@ -59,6 +62,7 @@ impl Vinland {
     pub fn new(
         display: &Display<Vinland>,
         loop_signal: LoopSignal,
+        config: Config,
     ) -> (
         Self,
         impl calloop::EventSource<Event = smithay::backend::winit::WinitEvent, Metadata = (), Ret = ()>,
@@ -124,6 +128,7 @@ impl Vinland {
             pointer_pos: (0.0, 0.0).into(),
             data_device_state,
             cursor_status: CursorImageStatus::default_named(),
+            config,
         };
 
         (state, winit_evt_loop)
