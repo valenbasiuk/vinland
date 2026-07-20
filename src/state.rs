@@ -79,7 +79,15 @@ impl Vinland {
         // seat (inputs generales)
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&display_handle, "vinland-seat");
-        seat.add_keyboard(XkbConfig::default(), 200, 25).unwrap();
+        seat.add_keyboard(
+            XkbConfig {
+                layout:  &config.keyboard.layout,
+                options: config.keyboard.options.as_deref(),
+                ..XkbConfig::default()
+            },
+            config.keyboard.repeat_delay,
+            config.keyboard.repeat_rate,
+        ).unwrap();
         seat.add_pointer();
 
         // backend de winit -> renderiza dentro de una ventana del compositor host
