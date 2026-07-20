@@ -4,18 +4,18 @@
 // renderizado    -> render.rs
 // protocolos     -> handlers/
 
-use std::time::Instant;
-use tracing::info;
 use calloop::EventLoop;
 use smithay::backend::winit::WinitInput;
 use smithay::reexports::wayland_server::Display;
 use smithay::wayland::compositor::CompositorClientState;
+use std::time::Instant;
+use tracing::info;
 
-mod state;
 mod handlers;
 mod render;
+mod state;
 
-use state::{Vinland, ClientState};
+use state::{ClientState, Vinland};
 
 fn main() {
     tracing_subscriber::fmt::init();
@@ -34,53 +34,63 @@ fn main() {
 
     // fuente 1 -> display wayland (mensajes entrantes de clientes)
     // generic wrappea el fd del display para que calloop lo monitoree
-    loop_handle.insert_source(
-        smithay::reexports::calloop::generic::Generic::new(
-            display,
-            calloop::Interest::READ,
-            calloop::Mode::Level,
-        ),
-        |_, display, state| {
-            unsafe { display.get_mut().dispatch_clients(state).unwrap() };
-            Ok(calloop::PostAction::Continue)
-        },
-    ).unwrap();
+    loop_handle
+        .insert_source(
+            smithay::reexports::calloop::generic::Generic::new(
+                display,
+                calloop::Interest::READ,
+                calloop::Mode::Level,
+            ),
+            |_, display, state| {
+                unsafe { display.get_mut().dispatch_clients(state).unwrap() };
+                Ok(calloop::PostAction::Continue)
+            },
+        )
+        .unwrap();
 
     // fuente 2 -> socket wayland (conexiones nuevas de clientes)
     let socket = smithay::wayland::socket::ListeningSocketSource::new_auto().unwrap();
     info!("socket: {:?}", socket.socket_name());
-    loop_handle.insert_source(socket, |stream, _, state| {
-        state.display_handle
-            .insert_client(
-                stream,
-                std::sync::Arc::new(ClientState {
-                    compositor_state: CompositorClientState::default(),
-                }),
-            ).unwrap();
-    }).unwrap();
+    loop_handle
+        .insert_source(socket, |stream, _, state| {
+            state
+                .display_handle
+                .insert_client(
+                    stream,
+                    std::sync::Arc::new(ClientState {
+                        compositor_state: CompositorClientState::default(),
+                    }),
+                )
+                .unwrap();
+        })
+        .unwrap();
 
     // fuente 3 -> winit
-    loop_handle.insert_source(winit_evt_loop, move |event, _, state| {
-        match event {
-            smithay::backend::winit::WinitEvent::CloseRequested => {
-                info!("ventana cerrada");
-                state.loop_signal.stop();
+    loop_handle
+        .insert_source(winit_evt_loop, move |event, _, state| {
+            match event {
+                smithay::backend::winit::WinitEvent::CloseRequested => {
+                    info!("ventana cerrada");
+                    state.loop_signal.stop();
+                }
+                smithay::backend::winit::WinitEvent::Redraw => {
+                    render::render_frame(state, start_time);
+                }
+                smithay::backend::winit::WinitEvent::Input(event) => {
+                    // input event del backend -> traducido a protocolos wayland en process_input_event
+                    state.process_input_event::<WinitInput>(event);
+                    // pedimos redibujo para actualizar el cursor visual
+                    state.backend.window().request_redraw();
+                }
+                _ => {}
             }
-            smithay::backend::winit::WinitEvent::Redraw => {
-                render::render_frame(state, start_time);
-            }
-            smithay::backend::winit::WinitEvent::Input(event) => {
-                // input event del backend -> traducido a protocolos wayland en process_input_event
-                state.process_input_event::<WinitInput>(event);
-                // pedimos redibujo para actualizar el cursor visual
-                state.backend.window().request_redraw();
-            }
-            _ => {}
-        }
-    }).unwrap();
+        })
+        .unwrap();
 
     // idle callback -> flushea respuestas pendientes a todos los clientes
-    event_loop.run(None, &mut state, |state| {
-        state.display_handle.flush_clients().unwrap();
-    }).unwrap();
+    event_loop
+        .run(None, &mut state, |state| {
+            state.display_handle.flush_clients().unwrap();
+        })
+        .unwrap();
 }
