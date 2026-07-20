@@ -82,7 +82,7 @@ impl Vinland {
         seat.add_keyboard(
             XkbConfig {
                 layout:  &config.keyboard.layout,
-                options: config.keyboard.options.as_deref(),
+                options: config.keyboard.options.clone(),
                 ..XkbConfig::default()
             },
             config.keyboard.repeat_delay,
