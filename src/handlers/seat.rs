@@ -73,7 +73,13 @@ impl Vinland {
 
             // movimiento del mouse (winit usa coordenadas absolutas, no relativas)
             InputEvent::PointerMotionAbsolute { event } => {
-                let output_size = self.backend.window_size();
+                let scale_factor = self.backend.scale_factor();
+                let output_size = self
+                    .backend
+                    .window_size()
+                    .to_f64()
+                    .to_logical(scale_factor)
+                    .to_i32_round();
 
                 // position_transformed -> convierte coordenadas relativas (0..1) a píxeles lógicos
                 let pos: Point<f64, Logical> = (
