@@ -178,23 +178,22 @@ impl Vinland {
             if window.minimized {
                 continue;
             }
-            if window.rect.to_f64().contains(pos) {
-                // pos relativa al origen de la ventana (para buscar en el árbol de sub-superficies)
-                let local = pos - window.rect.loc.to_f64();
 
-                // under_from_surface_tree busca la sub-superficie exacta bajo local
-                // y devuelve su offset relativo a la ventana raíz
-                if let Some((subsurface, sub_offset)) = under_from_surface_tree(
-                    window.surface.wl_surface(),
-                    local,
-                    (0, 0),
-                    WindowSurfaceType::ALL,
-                ) {
-                    // la posición global de la sub-superficie =
-                    // origen de la ventana en pantalla + offset dentro de la ventana
-                    let global_pos = window.rect.loc.to_f64() + sub_offset.to_f64();
-                    return Some((subsurface, global_pos));
-                }
+            // calculamos la posición relativa al origen de la ventana
+            let local = pos - window.rect.loc.to_f64();
+
+            // under_from_surface_tree consulta las input regions REALES del cliente
+            // (no nuestro rect calculado) — más correcto para CSD donde la app
+            // puede renderizar ligeramente fuera del tamaño que le pedimos
+            if let Some((subsurface, sub_offset)) = under_from_surface_tree(
+                window.surface.wl_surface(),
+                local,
+                (0, 0),
+                WindowSurfaceType::ALL,
+            ) {
+                // posición global = origen de la ventana + offset de la sub-superficie dentro del árbol
+                let global_pos = window.rect.loc.to_f64() + sub_offset.to_f64();
+                return Some((subsurface, global_pos));
             }
         }
         None
