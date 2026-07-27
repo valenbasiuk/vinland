@@ -29,6 +29,11 @@ impl CompositorHandler for Vinland {
         // sin esto, render_elements_from_surface_tree no puede importar el buffer
         on_commit_buffer_handler::<Self>(surface);
 
+        // notificamos al PopupManager: puede haber un popup esperando ser configurado
+        // PopupManager.commit() envía el configure inicial a cualquier popup
+        // cuya xdg_surface aún no fue configurada (el primer commit lo dispara)
+        self.popups.commit(surface);
+
         // Si la superficie pertenece a una de nuestras ventanas normales (sin padre)
         // y aún no ha sido configurada/tilada (su rect de tamaño es 0):
         let mut should_retile = false;

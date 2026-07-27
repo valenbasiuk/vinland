@@ -18,6 +18,7 @@ use crate::state::Vinland;
 
 use smithay::reexports::wayland_server::Resource;
 use smithay::desktop::utils::under_from_surface_tree;
+use smithay::desktop::PopupManager;
 use smithay::desktop::WindowSurfaceType;
 
 // seathandler -> define qué tipos reciben foco de cada dispositivo
@@ -174,39 +175,34 @@ impl Vinland {
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        // los popups tienen z-order mayor que las ventanas:
-        // se chequean PRIMERO para que un click en un menú no caiga a la ventana de abajo
-        for popup in self.popups.iter().rev() {
-            let local = pos - popup.loc.to_f64();
-            if let Some((subsurface, sub_offset)) = under_from_surface_tree(
-                popup.surface.wl_surface(),
-                local,
-                (0, 0),
-                WindowSurfaceType::ALL,
-            ) {
-                let global_pos = popup.loc.to_f64() + sub_offset.to_f64();
-                return Some((subsurface, global_pos));
-            }
-        }
-
         for window in self.windows.iter().rev() {
             if window.minimized {
                 continue;
             }
 
-            // calculamos la posición relativa al origen de la ventana
-            let local = pos - window.rect.loc.to_f64();
+            // 1. Chequear popups de esta ventana (z-order mayor que la ventana)
+            for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+                let global_popup_loc = window.rect.loc + popup_location;
+                let local = pos - global_popup_loc.to_f64();
+                if let Some((subsurface, sub_offset)) = under_from_surface_tree(
+                    popup.wl_surface(),
+                    local,
+                    (0, 0),
+                    WindowSurfaceType::ALL,
+                ) {
+                    let global_pos = global_popup_loc.to_f64() + sub_offset.to_f64();
+                    return Some((subsurface, global_pos));
+                }
+            }
 
-            // under_from_surface_tree consulta las input regions REALES del cliente
-            // (no nuestro rect calculado) — más correcto para CSD donde la app
-            // puede renderizar ligeramente fuera del tamaño que le pedimos
+            // 2. Chequear la ventana misma
+            let local = pos - window.rect.loc.to_f64();
             if let Some((subsurface, sub_offset)) = under_from_surface_tree(
                 window.surface.wl_surface(),
                 local,
                 (0, 0),
                 WindowSurfaceType::ALL,
             ) {
-                // posición global = origen de la ventana + offset de la sub-superficie dentro del árbol
                 let global_pos = window.rect.loc.to_f64() + sub_offset.to_f64();
                 return Some((subsurface, global_pos));
             }

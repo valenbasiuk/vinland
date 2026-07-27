@@ -7,9 +7,12 @@ use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
 };
 
-use crate::state::{Popup, Vinland, Window};
+use smithay::desktop::{find_popup_root_surface, PopupKind};
+use smithay::input::Seat;
 use smithay::reexports::wayland_server::Resource;
-use tracing::info;
+use tracing::{info, warn};
+
+use crate::state::{Vinland, Window};
 
 impl XdgShellHandler for Vinland {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -115,83 +118,39 @@ impl XdgShellHandler for Vinland {
     // Nuestro trabajo: encontrar la posición en pantalla del padre,
     // sumarle la geometría que calcula el posicionador, y mandar configure.
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
-        // get_geometry() aplica anchor + gravity + offset y devuelve el rect
-        // del popup relativo al origen de la superficie padre
-        let geo = positioner.get_geometry();
-
-        // buscamos la posición en pantalla de la superficie padre del popup
-        // el padre puede ser un toplevel o a su vez otro popup
-        let parent_loc = surface
-            .get_parent_surface()
-            .and_then(|parent_wl| {
-                // primero buscamos en ventanas toplevels
-                self.windows
-                    .iter()
-                    .find(|w| *w.surface.wl_surface() == parent_wl)
-                    .map(|w| w.rect.loc)
-                    // si no, buscamos entre popups existentes (popup anidado)
-                    .or_else(|| {
-                        self.popups
-                            .iter()
-                            .find(|p| *p.surface.wl_surface() == parent_wl)
-                            .map(|p| p.loc)
-                    })
-            })
-            .unwrap_or((0, 0).into()); // fallback: origen si no encontramos al padre
-
-        // posición final en pantalla = posición del padre + offset del posicionador
-        let loc = parent_loc + geo.loc;
-
-        // mandamos configure al popup con su geometría calculada
-        // el popup necesita este configure para poder enviar su primer frame
-        surface.with_pending_state(|s| {
-            s.geometry = geo;
+        // Guardamos la geometría calculada por el posicionador en la superficie
+        surface.with_pending_state(|state| {
+            state.geometry = positioner.get_geometry();
+            state.positioner = positioner;
         });
-        if surface.send_configure().is_ok() {
-            self.popups.push(Popup { surface, loc });
+
+        // Le pasamos el popup a PopupManager de Smithay
+        if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
+            warn!("Error al registrar popup en PopupManager: {}", err);
         }
     }
 
-    // grab: la app pide que el popup capture todo el input hasta que se cierre
-    // (ej: si el usuario clickea fuera del menú, el menú debe cerrarse)
-    // por ahora lo dejamos sin implementar — el popup igual aparece pero
-    // sin grab exclusivo del puntero
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
+    // grab: la app pide que el popup capture todo el input (menus desplegables)
+    fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
+        let seat: Seat<Vinland> = Seat::from_resource(&seat).unwrap();
+        let kind = PopupKind::Xdg(surface);
+        if let Ok(root) = find_popup_root_surface(&kind) {
+            let _ = self.popups.grab_popup(root, kind, &seat, serial);
+        }
+    }
 
     // reposition: la app quiere mover un popup ya existente
-    // (ej: un dropdown que se abre cerca del borde de la pantalla y necesita reajustarse)
     fn reposition_request(
         &mut self,
         surface: PopupSurface,
         positioner: PositionerState,
         token: u32,
     ) {
-        // recalculamos la geometría con el nuevo posicionador
-        let geo = positioner.get_geometry();
-
-        surface.with_pending_state(|s| {
-            s.geometry = geo;
+        surface.with_pending_state(|state| {
+            state.geometry = positioner.get_geometry();
+            state.positioner = positioner;
         });
-        // send_repositioned avisa a la app que el reposicionamiento fue aceptado
         surface.send_repositioned(token);
         let _ = surface.send_configure();
-
-        // actualizamos la posición almacenada si el popup ya existe en nuestro vec
-        if let Some(popup) = self
-            .popups
-            .iter_mut()
-            .find(|p| p.surface.wl_surface() == surface.wl_surface())
-        {
-            let parent_loc = surface
-                .get_parent_surface()
-                .and_then(|parent_wl| {
-                    self.windows
-                        .iter()
-                        .find(|w| *w.surface.wl_surface() == parent_wl)
-                        .map(|w| w.rect.loc)
-                })
-                .unwrap_or((0, 0).into());
-            popup.loc = parent_loc + geo.loc;
-        }
     }
 }

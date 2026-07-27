@@ -20,6 +20,7 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::utils::{Scale, Transform};
 use smithay::desktop::utils::send_frames_surface_tree;
+use smithay::desktop::PopupManager;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::utils::IsAlive;
 
@@ -57,7 +58,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         }
         // to_physical_precise_round: convierte i32 logical a i32 physical sin perder precisión
         let pos = window.rect.loc.to_physical_precise_round(scale);
-        let elems = render_elements_from_surface_tree(
+        let elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
             renderer,
             window.surface.wl_surface(),
             pos,
@@ -66,22 +67,20 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             Kind::Unspecified,
         );
         all_elements.extend(elems);
-    }
 
-    // 1b. popups: se dibujan DESPUÉS de las ventanas para quedar encima (mayor z-order)
-    // limpiamos los popups cuya surface ya no está viva (el cliente los cerró)
-    state.popups.retain(|p| p.surface.wl_surface().alive());
-    for popup in &state.popups {
-        let pos = popup.loc.to_physical_precise_round(scale);
-        let elems = render_elements_from_surface_tree(
-            renderer,
-            popup.surface.wl_surface(),
-            pos,
-            scale,
-            1.0,
-            Kind::Unspecified,
-        );
-        all_elements.extend(elems);
+        // 1b. popups de esta ventana (usando PopupManager de Smithay)
+        for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+            let popup_pos = (window.rect.loc + popup_location).to_physical_precise_round(scale);
+            let popup_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
+                renderer,
+                popup.wl_surface(),
+                popup_pos,
+                scale,
+                1.0,
+                Kind::Unspecified,
+            );
+            all_elements.extend(popup_elems);
+        }
     }
 
     // 2. lógica del cursor
