@@ -11,7 +11,7 @@ use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::selection::data_device::DataDeviceState;
-use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellState};
+use smithay::wayland::shell::xdg::{PopupSurface, ToplevelSurface, XdgShellState};
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::xdg_foreign::XdgForeignState; // parentezco apps
 
@@ -23,6 +23,13 @@ pub struct Window {
     pub surface: ToplevelSurface,
     pub rect: Rectangle<i32, Logical>,
     pub minimized: bool,
+}
+
+// popup -> menús contextuales, dropdowns, tooltips
+// a diferencia de Window, el tamaño lo define la app — solo guardamos la posición
+pub struct Popup {
+    pub surface: PopupSurface,
+    pub loc: Point<i32, Logical>, // posición en pantalla en coordenadas lógicas
 }
 // vinland -> estado global del compositor
 // todos los handlers de protocolos reciben &mut self de este struct
@@ -37,6 +44,7 @@ pub struct Vinland {
     pub backend: WinitGraphicsBackend<GlesRenderer>,
     pub loop_signal: LoopSignal,
     pub windows: Vec<Window>,
+    pub popups: Vec<Popup>,          // menús y popups activos, ordenados de menor a mayor z-order
     pub pointer_pos: Point<f64, Logical>,
     pub data_device_state: DataDeviceState,
     pub cursor_status: CursorImageStatus,
@@ -133,6 +141,7 @@ impl Vinland {
             loop_signal,
             xdg_foreign_state,
             windows: Vec::new(),
+            popups: Vec::new(),
             pointer_pos: (0.0, 0.0).into(),
             data_device_state,
             cursor_status: CursorImageStatus::default_named(),

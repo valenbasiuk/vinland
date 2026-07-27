@@ -68,6 +68,22 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         all_elements.extend(elems);
     }
 
+    // 1b. popups: se dibujan DESPUÉS de las ventanas para quedar encima (mayor z-order)
+    // limpiamos los popups cuya surface ya no está viva (el cliente los cerró)
+    state.popups.retain(|p| p.surface.wl_surface().alive());
+    for popup in &state.popups {
+        let pos = popup.loc.to_physical_precise_round(scale);
+        let elems = render_elements_from_surface_tree(
+            renderer,
+            popup.surface.wl_surface(),
+            pos,
+            scale,
+            1.0,
+            Kind::Unspecified,
+        );
+        all_elements.extend(elems);
+    }
+
     // 2. lógica del cursor
     // reset del cursor si la superficie ya no está viva
     let mut reset = false;

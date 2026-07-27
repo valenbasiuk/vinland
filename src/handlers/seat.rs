@@ -174,6 +174,21 @@ impl Vinland {
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        // los popups tienen z-order mayor que las ventanas:
+        // se chequean PRIMERO para que un click en un menú no caiga a la ventana de abajo
+        for popup in self.popups.iter().rev() {
+            let local = pos - popup.loc.to_f64();
+            if let Some((subsurface, sub_offset)) = under_from_surface_tree(
+                popup.surface.wl_surface(),
+                local,
+                (0, 0),
+                WindowSurfaceType::ALL,
+            ) {
+                let global_pos = popup.loc.to_f64() + sub_offset.to_f64();
+                return Some((subsurface, global_pos));
+            }
+        }
+
         for window in self.windows.iter().rev() {
             if window.minimized {
                 continue;
