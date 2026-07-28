@@ -9,11 +9,11 @@ use smithay::wayland::shell::xdg::{
 };
 
 use smithay::desktop::{
-    find_popup_root_surface, PopupKind, PopupKeyboardGrab, PopupPointerGrab,
+    find_popup_root_surface, PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy,
 };
 use smithay::input::Seat;
 use smithay::reexports::wayland_server::Resource;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::state::{Vinland, Window};
 
@@ -26,25 +26,16 @@ impl XdgShellHandler for Vinland {
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         info!("nueva ventana: {:?}", surface.wl_surface().id());
 
-        // si tiene padre -> floating
+        // si tiene padre -> ventana flotante / diálogo / menú desplegable hijo
         if surface.parent().is_some() {
-            // calculamos la posición centrada
-            let out_size = self.backend.window_size();
-            let dialog_w = 600;
-            let dialog_h = 500;
-            let x = (out_size.w - dialog_w) / 2;
-            let y = (out_size.h - dialog_h) / 2;
-
-            let rect = Rectangle::new((x, y).into(), (dialog_w, dialog_h).into());
+            // No forzamos un tamaño fijo de 600x500; permitimos que el cliente especifique su propio tamaño
+            let rect = Rectangle::new((100, 100).into(), (0, 0).into());
             self.windows.push(Window {
                 surface: surface.clone(),
                 rect,
                 minimized: false,
             });
 
-            surface.with_pending_state(|s| {
-                s.size = Some(Size::from((dialog_w, dialog_h)));
-            });
             surface.send_configure();
         } else {
             // ventana normal -> la agregamos con rect cero temporalmente
@@ -122,33 +113,54 @@ impl XdgShellHandler for Vinland {
     // sumarle la geometría que calcula el posicionador, y mandar configure.
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
         let geo = positioner.get_geometry();
+        info!("[XDG] new_popup recibido para surface {:?} con geo {:?}", surface.wl_surface().id(), geo);
+
+        // IMPORTANTE: NO llamar send_configure() aquí.
+        // El configure inicial del xdg_popup DEBE enviarse en el primer commit
+        // (cuando is_initial_configure_sent() == false), no en new_popup().
+        // Enviarlo aquí puede causar una race condition con la inicialización
+        // del xdg_surface del cliente, haciendo que el popup nunca se configure.
         surface.with_pending_state(|state| {
             state.geometry = geo;
             state.positioner = positioner;
         });
 
-        if surface.send_configure().is_ok() {
-            let _ = self.popups.track_popup(PopupKind::from(surface));
+        if let Err(e) = self.popups.track_popup(PopupKind::from(surface)) {
+            tracing::warn!("[XDG] new_popup: track_popup falló: {:?}", e);
+        } else {
+            info!("[XDG] new_popup: popup trackeado (configure se enviará en el primer commit)");
         }
     }
 
     // grab: la app pide que el popup capture todo el input (menús desplegables)
-    //
-    // PopupGrab es el objeto maestro del grab. A partir de él creamos:
-    //   - PopupKeyboardGrab: intercepta teclas y mantiene foco en el popup
-    //   - PopupPointerGrab: intercepta clicks; si es afuera del popup -> lo cierra
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
+        info!("[XDG] grab solicitado para popup {:?}", surface.wl_surface().id());
         let seat: Seat<Vinland> = Seat::from_resource(&seat).unwrap();
         let kind = PopupKind::Xdg(surface);
         if let Ok(root) = find_popup_root_surface(&kind) {
-            if let Ok(grab) = self.popups.grab_popup(root, kind, &seat, serial) {
-                // grab de teclado: mantiene el foco en el popup
+            let ret = self.popups.grab_popup(root, kind, &seat, serial);
+
+            if let Ok(mut grab) = ret {
                 if let Some(keyboard) = seat.get_keyboard() {
+                    if keyboard.is_grabbed()
+                        && !(keyboard.has_grab(serial)
+                            || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
+                    {
+                        grab.ungrab(PopupUngrabStrategy::All);
+                        return;
+                    }
+                    keyboard.set_focus(self, grab.current_grab(), serial);
                     keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
                 }
-                // grab de puntero: cierra el popup si se clickea afuera
                 if let Some(pointer) = seat.get_pointer() {
-                    pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Clear);
+                    if pointer.is_grabbed()
+                        && !(pointer.has_grab(serial)
+                            || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
+                    {
+                        grab.ungrab(PopupUngrabStrategy::All);
+                        return;
+                    }
+                    pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
                 }
             }
         }

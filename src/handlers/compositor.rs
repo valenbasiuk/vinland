@@ -6,6 +6,7 @@ use smithay::wayland::compositor::{CompositorHandler, CompositorState, Composito
 use smithay::wayland::shm::ShmHandler;
 use smithay::wayland::buffer::BufferHandler;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Resource;
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
 
 use crate::state::{Vinland, ClientState};
@@ -29,10 +30,22 @@ impl CompositorHandler for Vinland {
         // sin esto, render_elements_from_surface_tree no puede importar el buffer
         on_commit_buffer_handler::<Self>(surface);
 
-        // notificamos al PopupManager: puede haber un popup esperando ser configurado
-        // PopupManager.commit() envía el configure inicial a cualquier popup
-        // cuya xdg_surface aún no fue configurada (el primer commit lo dispara)
+        // PopupManager.commit() mapea el popup (lo mueve de unmapped → mapped).
+        // Después buscamos el popup para enviar el configure inicial si aún no fue enviado.
+        // Este es el patrón correcto de Anvil: new_popup solo trackea, el commit configura.
         self.popups.commit(surface);
+        if let Some(popup) = self.popups.find_popup(surface) {
+            match popup {
+                smithay::desktop::PopupKind::Xdg(ref xdg_popup) => {
+                    if !xdg_popup.is_initial_configure_sent() {
+                        // NOTE: El configure inicial siempre está permitido.
+                        xdg_popup.send_configure().expect("popup initial configure failed");
+                        tracing::info!("[compositor] popup configure inicial enviado para {:?}", surface.id());
+                    }
+                }
+                _ => {}
+            }
+        }
 
         // Si la superficie pertenece a una de nuestras ventanas normales (sin padre)
         // y aún no ha sido configurada/tilada (su rect de tamaño es 0):

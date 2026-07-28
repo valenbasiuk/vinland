@@ -15,11 +15,13 @@ use smithay::utils::{Point, Logical, SERIAL_COUNTER};
 
 
 use crate::state::Vinland;
+use tracing::info;
 
 use smithay::reexports::wayland_server::Resource;
 use smithay::desktop::utils::under_from_surface_tree;
 use smithay::desktop::PopupManager;
 use smithay::desktop::WindowSurfaceType;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 
 // seathandler -> define qué tipos reciben foco de cada dispositivo
 impl SeatHandler for Vinland {
@@ -92,8 +94,10 @@ impl Vinland {
 
                 let pointer = self.seat.get_pointer().unwrap();
 
-                // surface_under -> busca qué superficie del cliente está bajo el cursor
-                // por ahora: si hay ventanas, la primera recibe el foco del puntero
+                // SIEMPRE pasamos el focus real — incluso con un grab activo.
+                // PopupPointerGrab necesita surface_under para saber si el cursor
+                // está dentro o fuera del popup, y así decidir si redirigir o dismiss.
+                // Pasar None lo dejaba ciego y el menú ≡ nunca se abría.
                 let focus = self.surface_under(pos);
 
                 pointer.motion(
@@ -113,6 +117,10 @@ impl Vinland {
                 let serial = SERIAL_COUNTER.next_serial();
                 let button = event.button_code();
                 let state  = wl_pointer::ButtonState::from(event.state());
+                let target = self.surface_under(self.pointer_pos);
+
+                info!("[CLICK] pos={:?} button={} state={:?} target={:?}",
+                    self.pointer_pos, button, state, target.as_ref().map(|(s, _)| s.id()));
 
                 // al hacer click, actualizamos el foco del teclado SOLO si no hay un grab activo (ej: popup/menú)
                 let keyboard = self.seat.get_keyboard().unwrap();
@@ -121,6 +129,20 @@ impl Vinland {
                 }
 
                 let pointer = self.seat.get_pointer().unwrap();
+                // Siempre mandamos motion antes de button (incluso con grab activo).
+                // PopupPointerGrab.button() usa current_location() para saber si el
+                // click es dentro o fuera del popup → necesita posición actualizada.
+                let focus = self.surface_under(self.pointer_pos);
+                pointer.motion(
+                    self,
+                    focus,
+                    &MotionEvent {
+                        location: self.pointer_pos,
+                        serial,
+                        time: Event::time_msec(&event),
+                    },
+                );
+
                 pointer.button(
                     self,
                     &ButtonEvent {
@@ -212,18 +234,79 @@ impl Vinland {
     }
 
     // update_keyboard_focus -> le dice al keyboard handle qué superficie tiene foco
+    // y envía el estado State::Activated a la superficie xdg_toplevel para activar CSD y menús GTK
     pub fn update_keyboard_focus(&mut self, pos: Point<f64, Logical>, serial: smithay::utils::Serial) {
         let keyboard = self.seat.get_keyboard().unwrap();
         if keyboard.is_grabbed() {
             return;
         }
-        match self.surface_under(pos) {
-            Some((surface, _)) => {
-                keyboard.set_focus(self, Some(surface), serial);
-            }
-            None => {
-                keyboard.set_focus(self, None, serial);
+
+        let target_surface = self.surface_under(pos).map(|(s, _)| s);
+
+        for window in &mut self.windows {
+            let is_focused = target_surface
+                .as_ref()
+                .map(|s| {
+                    // 1. Es la superficie principal o subsuperficie de ella
+                    let mut found = false;
+                    smithay::wayland::compositor::with_surface_tree_downward(
+                        window.surface.wl_surface(),
+                        (),
+                        |_, _, _| smithay::wayland::compositor::TraversalAction::DoChildren(()),
+                        |child, _, _| {
+                            if child == s {
+                                found = true;
+                            }
+                        },
+                        |_, _, _| true,
+                    );
+                    if found {
+                        return true;
+                    }
+
+                    // 2. Es un popup de esta ventana (o subsuperficie de un popup)
+                    for (popup, _) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+                        let mut popup_found = false;
+                        smithay::wayland::compositor::with_surface_tree_downward(
+                            popup.wl_surface(),
+                            (),
+                            |_, _, _| smithay::wayland::compositor::TraversalAction::DoChildren(()),
+                            |child, _, _| {
+                                if child == s {
+                                    popup_found = true;
+                                }
+                            },
+                            |_, _, _| true,
+                        );
+                        if popup_found {
+                            return true;
+                        }
+                    }
+
+                    false
+                })
+                .unwrap_or(false);
+
+            let mut changed = false;
+            window.surface.with_pending_state(|state| {
+                if is_focused {
+                    if !state.states.contains(xdg_toplevel::State::Activated) {
+                        state.states.set(xdg_toplevel::State::Activated);
+                        changed = true;
+                    }
+                } else {
+                    if state.states.contains(xdg_toplevel::State::Activated) {
+                        state.states.unset(xdg_toplevel::State::Activated);
+                        changed = true;
+                    }
+                }
+            });
+
+            if changed {
+                window.surface.send_configure();
             }
         }
+
+        keyboard.set_focus(self, target_surface, serial);
     }
 }

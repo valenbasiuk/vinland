@@ -214,7 +214,7 @@ impl Vinland {
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((w - gap * 2, h - gap * 2)));
                 });
-                win.surface.send_pending_configure();
+                win.surface.send_configure();
             } else if tiled_idx == 0 {
                 // master: mitad izquierda con gaps
                 let master_w = w / 2 - gap - gap / 2;
@@ -225,7 +225,7 @@ impl Vinland {
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((master_w, h - gap * 2)));
                 });
-                win.surface.send_pending_configure();
+                win.surface.send_configure();
                 tiled_idx += 1;
             } else {
                 // stack: mitad derecha dividida con gaps
@@ -233,13 +233,18 @@ impl Vinland {
                 let stack_x = master_w + gap;
                 let stack_w = w - stack_x - gap;
                 let slot_h = h / (total_tiled as i32 - 1);
-                let stack_h = slot_h - gap;
-                let y = (tiled_idx - 1) as i32 * slot_h + gap;
-                win.rect = Rectangle::new((stack_x, y).into(), (stack_w, stack_h).into());
+                let stack_idx = tiled_idx - 1;
+                let y = slot_h * stack_idx + gap;
+                let slot_h_gapped = slot_h - gap * 2;
+
+                win.rect = Rectangle::new(
+                    (stack_x, y).into(),
+                    (stack_w, slot_h_gapped).into(),
+                );
                 win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((stack_w, stack_h)));
+                    s.size = Some(Size::from((stack_w, slot_h_gapped)));
                 });
-                win.surface.send_pending_configure();
+                win.surface.send_configure();
                 tiled_idx += 1;
             }
         }
