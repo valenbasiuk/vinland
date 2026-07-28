@@ -25,6 +25,7 @@ use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::utils::IsAlive;
 
 use crate::state::Vinland;
+use tracing::info;
 
 // render_frame -> dibuja un frame completo y avisa a los clientes
 //   1. colecta elementos de cada superficie wayland
@@ -69,7 +70,10 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         all_elements.extend(elems);
 
         // 1b. popups de esta ventana (usando PopupManager de Smithay)
+        let mut popup_count = 0;
         for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+            popup_count += 1;
+            info!("[render] dibujando popup #{} en loc={:?}", popup_count, popup_location);
             let popup_pos = (window.rect.loc + popup_location).to_physical_precise_round(scale);
             let popup_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
                 renderer,
@@ -153,6 +157,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     // send_frames_surface_tree -> avisa a cada cliente que su frame fue mostrado
     let output = state.output.clone();
     for window in &state.windows {
+        // frame callback al toplevel
         send_frames_surface_tree(
             window.surface.wl_surface(),
             &output,
@@ -160,6 +165,18 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             None,
             |_, _| Some(output.clone()),
         );
+        // frame callbacks a los popups de esta ventana
+        // IMPORTANTE: sin esto, los popups nunca reciben la señal de "tu frame fue mostrado"
+        // y el cliente queda esperando indefinidamente -> broken pipe / crash
+        for (popup, _) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+            send_frames_surface_tree(
+                popup.wl_surface(),
+                &output,
+                start_time.elapsed(),
+                None,
+                |_, _| Some(output.clone()),
+            );
+        }
     }
 
     state.backend.window().request_redraw();

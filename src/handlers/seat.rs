@@ -114,8 +114,9 @@ impl Vinland {
                 let button = event.button_code();
                 let state  = wl_pointer::ButtonState::from(event.state());
 
-                // al hacer click, actualizamos el foco del teclado a la ventana clickeada
-                if wl_pointer::ButtonState::Pressed == state {
+                // al hacer click, actualizamos el foco del teclado SOLO si no hay un grab activo (ej: popup/menú)
+                let keyboard = self.seat.get_keyboard().unwrap();
+                if wl_pointer::ButtonState::Pressed == state && !keyboard.is_grabbed() {
                     self.update_keyboard_focus(self.pointer_pos, serial);
                 }
 
@@ -213,6 +214,9 @@ impl Vinland {
     // update_keyboard_focus -> le dice al keyboard handle qué superficie tiene foco
     pub fn update_keyboard_focus(&mut self, pos: Point<f64, Logical>, serial: smithay::utils::Serial) {
         let keyboard = self.seat.get_keyboard().unwrap();
+        if keyboard.is_grabbed() {
+            return;
+        }
         match self.surface_under(pos) {
             Some((surface, _)) => {
                 keyboard.set_focus(self, Some(surface), serial);

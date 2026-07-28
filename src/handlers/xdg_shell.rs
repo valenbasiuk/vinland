@@ -3,11 +3,14 @@
 
 use smithay::reexports::wayland_server::protocol::wl_seat;
 use smithay::utils::{Rectangle, Serial, Size, SERIAL_COUNTER};
+use smithay::input::pointer::Focus;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
 };
 
-use smithay::desktop::{find_popup_root_surface, PopupKind};
+use smithay::desktop::{
+    find_popup_root_surface, PopupKind, PopupKeyboardGrab, PopupPointerGrab,
+};
 use smithay::input::Seat;
 use smithay::reexports::wayland_server::Resource;
 use tracing::{info, warn};
@@ -118,24 +121,36 @@ impl XdgShellHandler for Vinland {
     // Nuestro trabajo: encontrar la posición en pantalla del padre,
     // sumarle la geometría que calcula el posicionador, y mandar configure.
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
-        // Guardamos la geometría calculada por el posicionador en la superficie
+        let geo = positioner.get_geometry();
         surface.with_pending_state(|state| {
-            state.geometry = positioner.get_geometry();
+            state.geometry = geo;
             state.positioner = positioner;
         });
 
-        // Le pasamos el popup a PopupManager de Smithay
-        if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
-            warn!("Error al registrar popup en PopupManager: {}", err);
+        if surface.send_configure().is_ok() {
+            let _ = self.popups.track_popup(PopupKind::from(surface));
         }
     }
 
-    // grab: la app pide que el popup capture todo el input (menus desplegables)
+    // grab: la app pide que el popup capture todo el input (menús desplegables)
+    //
+    // PopupGrab es el objeto maestro del grab. A partir de él creamos:
+    //   - PopupKeyboardGrab: intercepta teclas y mantiene foco en el popup
+    //   - PopupPointerGrab: intercepta clicks; si es afuera del popup -> lo cierra
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat: Seat<Vinland> = Seat::from_resource(&seat).unwrap();
         let kind = PopupKind::Xdg(surface);
         if let Ok(root) = find_popup_root_surface(&kind) {
-            let _ = self.popups.grab_popup(root, kind, &seat, serial);
+            if let Ok(grab) = self.popups.grab_popup(root, kind, &seat, serial) {
+                // grab de teclado: mantiene el foco en el popup
+                if let Some(keyboard) = seat.get_keyboard() {
+                    keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
+                }
+                // grab de puntero: cierra el popup si se clickea afuera
+                if let Some(pointer) = seat.get_pointer() {
+                    pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Clear);
+                }
+            }
         }
     }
 
