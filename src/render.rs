@@ -47,7 +47,18 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let (renderer, mut framebuffer) = state.backend.bind().unwrap();
 
     // 1. colectar elementos de las ventanas en su posición de tiling
-    let mut all_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+    // all_elements está en orden FRONT-TO-BACK: lo que está más al frente va primero.
+    // Al dibujar en reverso, lo más atrás se pinta primero y lo más adelante encima.
+    //
+    // Capas (de frente a atrás):
+    //   [cursor] → [popups xdg] → [ventanas + sus subsurfaces]
+    //
+    // render_elements_from_surface_tree devuelve la ventana con sus subsurfaces ya
+    // ordenadas en front-to-back internamente (above_sub, toplevel, below_sub).
+
+    let mut window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+    let mut popup_elements:  Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+
     for window in &state.windows {
         // si la ventana está minimizada, no la dibujamos
         if window.minimized {
@@ -67,29 +78,17 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             1.0,
             Kind::Unspecified,
         );
-        all_elements.extend(elems);
+        window_elements.extend(elems);
 
-        let window_geo_loc = smithay::wayland::compositor::with_states(window.surface.wl_surface(), |states| {
-            states
-                .cached_state
-                .get::<smithay::wayland::shell::xdg::SurfaceCachedState>()
-                .current()
-                .geometry
-                .map(|geo| geo.loc)
-                .unwrap_or_default()
-        });
-
-        // 1b. popups de esta ventana (usando PopupManager de Smithay)
-        let mut popup_count = 0;
-        for (popup, mut popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
-            popup_count += 1;
-            if popup_location == (0, 0).into() {
-                if let smithay::desktop::PopupKind::Xdg(ref xdg_p) = popup {
-                    popup_location = xdg_p.with_pending_state(|s| s.geometry.loc);
-                }
-            }
+        // 1b. popups xdg de esta ventana (PopupManager)
+        // popup_location de popups_for_surface ya está en coordenadas de GEOMETRÍA del parent.
+        // La posición del surface del popup es: geometry_global + popup_location - popup_geo_loc
+        // (popup_geo_loc ajusta el offset interno del popup, como la sombra/padding propio del popup)
+        for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
             let popup_geo_loc = popup.geometry().loc;
-            let popup_loc = window.rect.loc + window_geo_loc + popup_location - popup_geo_loc;
+            // popup_location está en coordenadas de geometría del parent, y window.rect.loc es
+            // la posición global de esa geometría → no sumamos window_geo_loc aquí.
+            let popup_loc = window.rect.loc + popup_location - popup_geo_loc;
             let popup_pos = popup_loc.to_physical_precise_round(scale);
             let popup_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
                 renderer,
@@ -99,9 +98,15 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
                 1.0,
                 Kind::Unspecified,
             );
-            all_elements.extend(popup_elems);
+            popup_elements.extend(popup_elems);
         }
     }
+
+    // Construir all_elements en front-to-back: popups adelante, ventanas atrás.
+    // El cursor se prepend más adelante (frente de todo).
+    let mut all_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+    all_elements.extend(popup_elements);
+    all_elements.extend(window_elements);
 
     // 2. lógica del cursor
     // reset del cursor si la superficie ya no está viva

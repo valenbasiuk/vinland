@@ -211,25 +211,11 @@ impl Vinland {
                 continue;
             }
 
-            let window_geo_loc = smithay::wayland::compositor::with_states(window.surface.wl_surface(), |states| {
-                states
-                    .cached_state
-                    .get::<smithay::wayland::shell::xdg::SurfaceCachedState>()
-                    .current()
-                    .geometry
-                    .map(|geo| geo.loc)
-                    .unwrap_or_default()
-            });
-
             // 1. Chequear popups de esta ventana (z-order mayor que la ventana)
-            for (popup, mut popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
-                if popup_location == (0, 0).into() {
-                    if let smithay::desktop::PopupKind::Xdg(ref xdg_p) = popup {
-                        popup_location = xdg_p.with_pending_state(|s| s.geometry.loc);
-                    }
-                }
+            for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
                 let popup_geo_loc = popup.geometry().loc;
-                let global_popup_loc = window.rect.loc + window_geo_loc + popup_location - popup_geo_loc;
+                // popup_location está en coords de geometría del parent → no sumamos window_geo_loc
+                let global_popup_loc = window.rect.loc + popup_location - popup_geo_loc;
                 let local = pos - global_popup_loc.to_f64();
                 if let Some((subsurface, sub_offset)) = under_from_surface_tree(
                     popup.wl_surface(),
