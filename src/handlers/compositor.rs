@@ -26,6 +26,8 @@ impl CompositorHandler for Vinland {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
+        let role = smithay::wayland::compositor::get_role(surface);
+        tracing::info!("[COMMIT] surface {:?} role={:?}", surface.id(), role);
         // registra el buffer del cliente en el estado interno de Smithay
         // sin esto, render_elements_from_surface_tree no puede importar el buffer
         on_commit_buffer_handler::<Self>(surface);

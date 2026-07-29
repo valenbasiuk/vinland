@@ -222,7 +222,12 @@ impl Vinland {
             });
 
             // 1. Chequear popups de esta ventana (z-order mayor que la ventana)
-            for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+            for (popup, mut popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+                if popup_location == (0, 0).into() {
+                    if let smithay::desktop::PopupKind::Xdg(ref xdg_p) = popup {
+                        popup_location = xdg_p.with_pending_state(|s| s.geometry.loc);
+                    }
+                }
                 let popup_geo_loc = popup.geometry().loc;
                 let global_popup_loc = window.rect.loc + window_geo_loc + popup_location - popup_geo_loc;
                 let local = pos - global_popup_loc.to_f64();

@@ -81,11 +81,15 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
 
         // 1b. popups de esta ventana (usando PopupManager de Smithay)
         let mut popup_count = 0;
-        for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+        for (popup, mut popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
             popup_count += 1;
+            if popup_location == (0, 0).into() {
+                if let smithay::desktop::PopupKind::Xdg(ref xdg_p) = popup {
+                    popup_location = xdg_p.with_pending_state(|s| s.geometry.loc);
+                }
+            }
             let popup_geo_loc = popup.geometry().loc;
             let popup_loc = window.rect.loc + window_geo_loc + popup_location - popup_geo_loc;
-            info!("[render] dibujando popup #{} en loc={:?}", popup_count, popup_loc);
             let popup_pos = popup_loc.to_physical_precise_round(scale);
             let popup_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
                 renderer,
@@ -129,7 +133,11 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         // let cursor_pos = cursor_pos + Point::from((100, 100)); // Cursor
 
         // render_elements_from_surface_tree importa el buffer del cursor
-        let cursor_elems = render_elements_from_surface_tree(
+        // El cursor siempre va al FRENTE de todo (índice 0 = frente en orden front-to-back).
+        // render_elements_from_surface_tree devuelve elementos en front-to-back:
+        // el primer elemento es el más adelante (sobre todo lo demás).
+        // Por eso el cursor va primero en la Vec, y dibujamos la Vec en reverso (back-to-front).
+        let mut cursor_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
             renderer,
             surface,
             cursor_pos,
@@ -137,7 +145,8 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             1.0,
             Kind::Cursor,
         );
-        all_elements.extend(cursor_elems);
+        cursor_elems.append(&mut all_elements);
+        all_elements = cursor_elems;
     }
 
     // 3. renderizado de OpenGL
@@ -151,15 +160,22 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         &[damage],
     ).unwrap();
 
-    for element in &all_elements {
-        let _ = element.draw(
+    // Dibujar en orden REVERSO (back-to-front):
+    // all_elements está en front-to-back (lo que está al frente viene primero en el Vec).
+    // Para que OpenGL pinte correctamente (lo más reciente encima), dibujamos desde el fondo.
+    for element in all_elements.iter().rev() {
+        let geo = element.geometry(scale);
+        let result = element.draw(
             &mut frame,
             element.src(),
-            element.geometry(scale),
+            geo,
             &[damage],
             &[],
             None,
         );
+        if let Err(ref e) = result {
+            info!("[draw] ERROR al dibujar elemento: {:?}", e);
+        }
     }
 
     let _ = frame.finish().unwrap();

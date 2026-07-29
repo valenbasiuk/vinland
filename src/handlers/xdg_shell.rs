@@ -9,7 +9,8 @@ use smithay::wayland::shell::xdg::{
 };
 
 use smithay::desktop::{
-    find_popup_root_surface, PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy,
+    find_popup_root_surface, get_popup_toplevel_coords, PopupKeyboardGrab, PopupKind,
+    PopupPointerGrab, PopupUngrabStrategy,
 };
 use smithay::input::Seat;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -142,6 +143,8 @@ impl XdgShellHandler for Vinland {
             state.positioner = positioner;
         });
 
+        self.unconstrain_popup(&surface);
+
         if let Err(e) = self.popups.track_popup(PopupKind::from(surface)) {
             tracing::warn!("[XDG] new_popup: track_popup falló: {:?}", e);
         } else {
@@ -151,33 +154,41 @@ impl XdgShellHandler for Vinland {
 
     // grab: la app pide que el popup capture todo el input (menús desplegables)
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
-        info!("[XDG] grab solicitado para popup {:?}", surface.wl_surface().id());
+        info!("[XDG] grab solicitado para popup {:?}, serial: {:?}", surface.wl_surface().id(), serial);
         let seat: Seat<Vinland> = Seat::from_resource(&seat).unwrap();
         let kind = PopupKind::Xdg(surface);
         if let Ok(root) = find_popup_root_surface(&kind) {
             let ret = self.popups.grab_popup(root, kind, &seat, serial);
 
-            if let Ok(mut grab) = ret {
-                if let Some(keyboard) = seat.get_keyboard() {
-                    if keyboard.is_grabbed()
-                        && !(keyboard.has_grab(serial)
-                            || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
-                    {
-                        grab.ungrab(PopupUngrabStrategy::All);
-                        return;
+            match ret {
+                Ok(mut grab) => {
+                    info!("[XDG] grab_popup OK");
+                    if let Some(keyboard) = seat.get_keyboard() {
+                        if keyboard.is_grabbed()
+                            && !(keyboard.has_grab(serial)
+                                || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
+                        {
+                            info!("[XDG] keyboard ya estaba grabado y serial no coincide -> UNGRAB!");
+                            grab.ungrab(PopupUngrabStrategy::All);
+                            return;
+                        }
+                        keyboard.set_focus(self, grab.current_grab(), serial);
+                        keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
                     }
-                    keyboard.set_focus(self, grab.current_grab(), serial);
-                    keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
+                    if let Some(pointer) = seat.get_pointer() {
+                        if pointer.is_grabbed()
+                            && !(pointer.has_grab(serial)
+                                || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
+                        {
+                            info!("[XDG] pointer ya estaba grabado y serial no coincide -> UNGRAB!");
+                            grab.ungrab(PopupUngrabStrategy::All);
+                            return;
+                        }
+                        pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+                    }
                 }
-                if let Some(pointer) = seat.get_pointer() {
-                    if pointer.is_grabbed()
-                        && !(pointer.has_grab(serial)
-                            || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
-                    {
-                        grab.ungrab(PopupUngrabStrategy::All);
-                        return;
-                    }
-                    pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+                Err(err) => {
+                    tracing::warn!("[XDG] grab_popup error: {:?}", err);
                 }
             }
         }
@@ -194,7 +205,35 @@ impl XdgShellHandler for Vinland {
             state.geometry = positioner.get_geometry();
             state.positioner = positioner;
         });
+        self.unconstrain_popup(&surface);
         surface.send_repositioned(token);
         let _ = surface.send_configure();
+    }
+}
+
+impl Vinland {
+    pub fn unconstrain_popup(&self, popup: &PopupSurface) {
+        let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
+            return;
+        };
+        let Some(window) = self.windows.iter().find(|w| w.surface.wl_surface() == &root) else {
+            return;
+        };
+
+        let scale_factor = self.backend.scale_factor();
+        let out_size = self
+            .backend
+            .window_size()
+            .to_f64()
+            .to_logical(scale_factor)
+            .to_i32_round();
+
+        let mut target = Rectangle::new((0, 0).into(), out_size);
+        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
+        target.loc -= window.rect.loc;
+
+        popup.with_pending_state(|state| {
+            state.geometry = state.positioner.get_unconstrained_geometry(target);
+        });
     }
 }
