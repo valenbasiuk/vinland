@@ -69,12 +69,24 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         );
         all_elements.extend(elems);
 
+        let window_geo_loc = smithay::wayland::compositor::with_states(window.surface.wl_surface(), |states| {
+            states
+                .cached_state
+                .get::<smithay::wayland::shell::xdg::SurfaceCachedState>()
+                .current()
+                .geometry
+                .map(|geo| geo.loc)
+                .unwrap_or_default()
+        });
+
         // 1b. popups de esta ventana (usando PopupManager de Smithay)
         let mut popup_count = 0;
         for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
             popup_count += 1;
-            info!("[render] dibujando popup #{} en loc={:?}", popup_count, popup_location);
-            let popup_pos = (window.rect.loc + popup_location).to_physical_precise_round(scale);
+            let popup_geo_loc = popup.geometry().loc;
+            let popup_loc = window.rect.loc + window_geo_loc + popup_location - popup_geo_loc;
+            info!("[render] dibujando popup #{} en loc={:?}", popup_count, popup_loc);
+            let popup_pos = popup_loc.to_physical_precise_round(scale);
             let popup_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
                 renderer,
                 popup.wl_surface(),
