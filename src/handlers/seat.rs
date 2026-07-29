@@ -92,6 +92,14 @@ impl Vinland {
 
                 self.pointer_pos = pos;
 
+                // focus-follows-pointer: actualizamos el foco de teclado y el estado Activated
+                // al mover el mouse, no solo al hacer click. Esto garantiza que cuando el cursor
+                // entra a una ventana, la ventana ya está Activated ANTES de que llegue cualquier click.
+                // Sin esto, GTK recibe el primer click con la ventana inactiva y deshabilita
+                // los GAction-widgets (como el botón ≡), ignorando el click.
+                let serial = SERIAL_COUNTER.next_serial();
+                self.update_keyboard_focus(pos, serial);
+
                 let pointer = self.seat.get_pointer().unwrap();
 
                 // SIEMPRE pasamos el focus real — incluso con un grab activo.

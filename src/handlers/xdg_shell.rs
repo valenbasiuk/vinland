@@ -12,6 +12,7 @@ use smithay::desktop::{
     find_popup_root_surface, PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy,
 };
 use smithay::input::Seat;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::Resource;
 use tracing::info;
 
@@ -45,6 +46,22 @@ impl XdgShellHandler for Vinland {
                 rect: Rectangle::new((0, 0).into(), (0, 0).into()),
                 minimized: false,
             });
+        }
+
+        // Marcamos la ventana como Activated desde el principio.
+        // GTK deshabilita las GActions (y botones vinculados a ellas, como el menú ≡)
+        // si la ventana no está en estado Activated. Si no enviamos esto aquí,
+        // la ventana nace inactiva y el primer click en ≡ siempre es ignorado por GTK.
+        // Nota: para ventanas normales no enviamos configure aquí (lo hace retile())
+        // pero sí para las que tienen padre.
+        {
+            let win = self.windows.last_mut().unwrap();
+            win.surface.with_pending_state(|s| {
+                s.states.set(xdg_toplevel::State::Activated);
+            });
+            // Para ventanas con padre se envía configure en new_toplevel (ya está arriba).
+            // Para ventanas normales, retile() enviará el configure más adelante con el
+            // tamaño correcto, y el estado Activated quedará incluido en ese configure.
         }
 
         // foco de teclado a la ventana recien abierta
