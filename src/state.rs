@@ -14,7 +14,9 @@ use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellState};
 use smithay::wayland::shm::ShmState;
-use smithay::wayland::xdg_foreign::XdgForeignState; // parentezco apps
+use smithay::wayland::xwayland_shell::XWaylandShellState;
+use smithay::wayland::xdg_foreign::XdgForeignState;
+use smithay::xwayland::{X11Wm, XWayland};
 
 use crate::config::Config;
 
@@ -43,6 +45,11 @@ pub struct Vinland {
     pub data_device_state: DataDeviceState,
     pub cursor_status: CursorImageStatus,
     pub xdg_foreign_state: XdgForeignState,
+    #[allow(dead_code)]
+    pub xwayland: Option<XWayland>,
+    pub xwm: Option<X11Wm>,
+    pub xdisplay: Option<u32>,
+    pub xwayland_shell_state: XWaylandShellState,
     pub config: Config,
 }
 
@@ -123,6 +130,8 @@ impl Vinland {
         output.set_preferred(mode);
         output.create_global::<Vinland>(&display_handle);
 
+        let xwayland_shell_state = XWaylandShellState::new::<Vinland>(&display_handle);
+
         let state = Vinland {
             display_handle,
             compositor_state,
@@ -139,6 +148,10 @@ impl Vinland {
             pointer_pos: (0.0, 0.0).into(),
             data_device_state,
             cursor_status: CursorImageStatus::default_named(),
+            xwayland: None,
+            xwm: None,
+            xdisplay: None,
+            xwayland_shell_state,
             config,
         };
 

@@ -53,7 +53,7 @@ fn main() {
 
     // fuente 2 -> socket wayland (conexiones nuevas de clientes)
     let socket = smithay::wayland::socket::ListeningSocketSource::new_auto().unwrap();
-    info!("socket: {:?}", socket.socket_name());
+    info!("socket wayland: {:?}", socket.socket_name());
     loop_handle
         .insert_source(socket, |stream, _, state| {
             state
@@ -67,6 +67,43 @@ fn main() {
                 .unwrap();
         })
         .unwrap();
+
+    // fuente 3 -> xwayland (socket x11)
+    use smithay::xwayland::{X11Wm, XWayland, XWaylandEvent};
+    use std::process::Stdio;
+
+    let (xwayland, client) = XWayland::spawn(
+        &state.display_handle,
+        None,
+        std::iter::empty::<(String, String)>(),
+        std::iter::empty::<String>(),
+        true,
+        Stdio::null(),
+        Stdio::null(),
+        |_| (),
+    )
+    .expect("falló al iniciar XWayland");
+
+    let dh = state.display_handle.clone();
+    let handle = loop_handle.clone();
+    loop_handle
+        .insert_source(xwayland, move |event, _, state| match event {
+            XWaylandEvent::Ready {
+                x11_socket,
+                display_number,
+            } => {
+                info!("socket X11 listo! export DISPLAY=:{display_number}");
+                let wm = X11Wm::start_wm(handle.clone(), &dh, x11_socket, client.clone())
+                    .expect("falló al conectar X11 Window Manager");
+                state.xwm = Some(wm);
+                state.xdisplay = Some(display_number);
+            }
+            XWaylandEvent::Error => {
+                tracing::warn!("XWayland falló en el arranque");
+            }
+        })
+        .unwrap();
+
 
     // fuente 3 -> winit
     loop_handle
