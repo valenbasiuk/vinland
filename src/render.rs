@@ -24,7 +24,10 @@ use smithay::desktop::PopupManager;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::utils::IsAlive;
 
+use crate::handlers::layer_shell::layer_surface_geometry;
 use crate::state::Vinland;
+use smithay::utils::Size;
+use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::info;
 
 // render_frame -> dibuja un frame completo y avisa a los clientes
@@ -81,13 +84,8 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         window_elements.extend(elems);
 
         // 1b. popups xdg de esta ventana (PopupManager)
-        // popup_location de popups_for_surface ya está en coordenadas de GEOMETRÍA del parent.
-        // La posición del surface del popup es: geometry_global + popup_location - popup_geo_loc
-        // (popup_geo_loc ajusta el offset interno del popup, como la sombra/padding propio del popup)
         for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
             let popup_geo_loc = popup.geometry().loc;
-            // popup_location está en coordenadas de geometría del parent, y window.rect.loc es
-            // la posición global de esa geometría → no sumamos window_geo_loc aquí.
             let popup_loc = window.rect.loc + popup_location - popup_geo_loc;
             let popup_pos = popup_loc.to_physical_precise_round(scale);
             let popup_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
@@ -102,11 +100,50 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         }
     }
 
-    // Construir all_elements en front-to-back: popups adelante, ventanas atrás.
-    // El cursor se prepend más adelante (frente de todo).
+    // 1c. Layer surfaces (Background, Bottom, Top, Overlay)
+    let output_size = state
+        .output
+        .current_mode()
+        .map(|m| m.size.to_logical(1))
+        .unwrap_or_else(|| Size::from((1920, 1080)));
+
+    let mut overlay_elements = Vec::new();
+    let mut top_elements = Vec::new();
+    let mut bottom_elements = Vec::new();
+    let mut background_elements = Vec::new();
+
+    for item in &state.layer_surfaces {
+        if !item.surface.alive() {
+            continue;
+        }
+        if let Some(rect) = layer_surface_geometry(&item.surface, output_size) {
+            let pos = rect.loc.to_physical_precise_round(scale);
+            let elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
+                renderer,
+                item.surface.wl_surface(),
+                pos,
+                scale,
+                1.0,
+                Kind::Unspecified,
+            );
+            match item.layer {
+                Layer::Overlay => overlay_elements.extend(elems),
+                Layer::Top => top_elements.extend(elems),
+                Layer::Bottom => bottom_elements.extend(elems),
+                Layer::Background => background_elements.extend(elems),
+            }
+        }
+    }
+
+    // Construir all_elements en front-to-back:
+    // [cursor] -> [Overlay] -> [Popups] -> [Top] -> [Ventanas] -> [Bottom] -> [Background]
     let mut all_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+    all_elements.extend(overlay_elements);
     all_elements.extend(popup_elements);
+    all_elements.extend(top_elements);
     all_elements.extend(window_elements);
+    all_elements.extend(bottom_elements);
+    all_elements.extend(background_elements);
 
     // 2. lógica del cursor
     // reset del cursor si la superficie ya no está viva
@@ -204,6 +241,19 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         for (popup, _) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
             send_frames_surface_tree(
                 popup.wl_surface(),
+                &output,
+                start_time.elapsed(),
+                None,
+                |_, _| Some(output.clone()),
+            );
+        }
+    }
+
+    // frame callbacks a las layer surfaces (barras, docks, wallpapers)
+    for item in &state.layer_surfaces {
+        if item.surface.alive() {
+            send_frames_surface_tree(
+                item.surface.wl_surface(),
                 &output,
                 start_time.elapsed(),
                 None,

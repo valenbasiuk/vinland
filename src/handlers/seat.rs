@@ -14,7 +14,10 @@ use smithay::reexports::wayland_server::protocol::{wl_surface::WlSurface, wl_poi
 use smithay::utils::{Point, Logical, SERIAL_COUNTER};
 
 
+use crate::handlers::layer_shell::layer_surface_geometry;
 use crate::state::Vinland;
+use smithay::utils::Size;
+use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::info;
 
 use smithay::reexports::wayland_server::Resource;
@@ -200,21 +203,58 @@ impl Vinland {
     }
 
     // surface_under -> devuelve qué wl_surface está bajo un punto lógico
-    // itera las ventanas en orden inverso (la última = la más al frente)
-    // devuelve la sub-superficie exacta + su posición GLOBAL en pantalla
+    // itera respetando el Z-order: Overlay > Popups/Top > Ventanas > Bottom > Background
     pub fn surface_under(
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        let output_size = self
+            .output
+            .current_mode()
+            .map(|m| m.size.to_logical(1))
+            .unwrap_or_else(|| Size::from((1920, 1080)));
+
+        // Helper para testear una layer surface
+        let check_layer = |target_layer: Layer| {
+            for item in self.layer_surfaces.iter().rev() {
+                if !item.surface.alive() || item.layer != target_layer {
+                    continue;
+                }
+                if let Some(rect) = layer_surface_geometry(&item.surface, output_size) {
+                    let local = pos - rect.loc.to_f64();
+                    if let Some((subsurface, sub_offset)) = under_from_surface_tree(
+                        item.surface.wl_surface(),
+                        local,
+                        (0, 0),
+                        WindowSurfaceType::ALL,
+                    ) {
+                        let global_pos = rect.loc.to_f64() + sub_offset.to_f64();
+                        return Some((subsurface, global_pos));
+                    }
+                }
+            }
+            None
+        };
+
+        // 1. Capa Overlay (pantalla completa / lockscreens / avisos urgentes)
+        if let Some(hit) = check_layer(Layer::Overlay) {
+            return Some(hit);
+        }
+
+        // 2. Popups XDG y Capa Top (barras, paneles)
+        if let Some(hit) = check_layer(Layer::Top) {
+            return Some(hit);
+        }
+
+        // 3. Ventanas Toplevel y sus Popups
         for window in self.windows.iter().rev() {
             if window.minimized {
                 continue;
             }
 
-            // 1. Chequear popups de esta ventana (z-order mayor que la ventana)
+            // Popups de esta ventana
             for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
                 let popup_geo_loc = popup.geometry().loc;
-                // popup_location está en coords de geometría del parent → no sumamos window_geo_loc
                 let global_popup_loc = window.rect.loc + popup_location - popup_geo_loc;
                 let local = pos - global_popup_loc.to_f64();
                 if let Some((subsurface, sub_offset)) = under_from_surface_tree(
@@ -228,7 +268,7 @@ impl Vinland {
                 }
             }
 
-            // 2. Chequear la ventana misma
+            // La ventana misma
             let local = pos - window.rect.loc.to_f64();
             if let Some((subsurface, sub_offset)) = under_from_surface_tree(
                 window.surface.wl_surface(),
@@ -240,6 +280,17 @@ impl Vinland {
                 return Some((subsurface, global_pos));
             }
         }
+
+        // 4. Capa Bottom (widgets de escritorio)
+        if let Some(hit) = check_layer(Layer::Bottom) {
+            return Some(hit);
+        }
+
+        // 5. Capa Background (fondos animados / wallpaper manager)
+        if let Some(hit) = check_layer(Layer::Background) {
+            return Some(hit);
+        }
+
         None
     }
 

@@ -14,8 +14,9 @@ use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellState};
 use smithay::wayland::shm::ShmState;
-use smithay::wayland::xwayland_shell::XWaylandShellState;
+use smithay::wayland::shell::wlr_layer::{Layer, LayerSurface, WlrLayerShellState};
 use smithay::wayland::xdg_foreign::XdgForeignState;
+use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::{X11Wm, XWayland};
 
 use crate::config::Config;
@@ -27,6 +28,12 @@ pub struct Window {
     pub rect: Rectangle<i32, Logical>,
     pub minimized: bool,
 }
+
+pub struct LayerSurfaceItem {
+    pub surface: LayerSurface,
+    pub layer: Layer,
+}
+
 // vinland -> estado global del compositor
 // todos los handlers de protocolos reciben &mut self de este struct
 pub struct Vinland {
@@ -45,6 +52,9 @@ pub struct Vinland {
     pub data_device_state: DataDeviceState,
     pub cursor_status: CursorImageStatus,
     pub xdg_foreign_state: XdgForeignState,
+    pub layer_shell_state: WlrLayerShellState,
+    // layer surfaces activas, ordenadas por capa (Background, Bottom, Top, Overlay)
+    pub layer_surfaces: Vec<LayerSurfaceItem>,
     #[allow(dead_code)]
     pub xwayland: Option<XWayland>,
     pub xwm: Option<X11Wm>,
@@ -131,6 +141,7 @@ impl Vinland {
         output.create_global::<Vinland>(&display_handle);
 
         let xwayland_shell_state = XWaylandShellState::new::<Vinland>(&display_handle);
+        let layer_shell_state = WlrLayerShellState::new::<Vinland>(&display_handle);
 
         let state = Vinland {
             display_handle,
@@ -143,6 +154,8 @@ impl Vinland {
             backend,
             loop_signal,
             xdg_foreign_state,
+            layer_shell_state,
+            layer_surfaces: Vec::new(),
             windows: Vec::new(),
             popups: PopupManager::default(),
             pointer_pos: (0.0, 0.0).into(),

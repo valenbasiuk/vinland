@@ -22,6 +22,8 @@
 - xdg_foreign (ventanas hijo / dialogs entre procesos)
 - cursor surface (apps que dibujan su propio cursor, ej: browser)
 - minimizar ventanas
+- Xwayland (servidor X11 embebido y X11Wm)
+- zwlr_layer_shell_v1 (barras, docks, wallpapers, notificaciones)
 
 // ==============================================================================
 // PENDIENTE (bugs / features incompletas)
