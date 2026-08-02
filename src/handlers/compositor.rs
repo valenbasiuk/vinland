@@ -11,6 +11,8 @@ use smithay::backend::renderer::utils::on_commit_buffer_handler;
 
 use crate::state::{Vinland, ClientState};
 
+use smithay::xwayland::XWaylandClientData;
+
 // compositorhandler -> wl_surface commits
 impl CompositorHandler for Vinland {
     fn compositor_state(&mut self) -> &mut CompositorState {
@@ -22,7 +24,13 @@ impl CompositorHandler for Vinland {
         &self,
         client: &'a smithay::reexports::wayland_server::Client,
     ) -> &'a CompositorClientState {
-        &client.get_data::<ClientState>().unwrap().compositor_state
+        if let Some(state) = client.get_data::<XWaylandClientData>() {
+            return &state.compositor_state;
+        }
+        if let Some(state) = client.get_data::<ClientState>() {
+            return &state.compositor_state;
+        }
+        panic!("Tipo de datos de cliente desconocido: {:?}", client);
     }
 
     fn commit(&mut self, surface: &WlSurface) {
