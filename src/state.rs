@@ -71,10 +71,24 @@ pub struct Vinland {
 pub fn load_wallpaper(renderer: &mut GlesRenderer, config: &Config) -> Option<GlesTexture> {
     let path = config.background.wallpaper.as_ref()?;
 
-    let img = match image::open(path) {
+    let reader = match image::ImageReader::open(path) {
+        Ok(r) => match r.with_guessed_format() {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("[wallpaper] error identificando formato de {:?}: {}", path, e);
+                return None;
+            }
+        },
+        Err(e) => {
+            tracing::warn!("[wallpaper] no se pudo abrir {:?}: {}", path, e);
+            return None;
+        }
+    };
+
+    let img = match reader.decode() {
         Ok(i) => i.into_rgba8(),
         Err(e) => {
-            tracing::warn!("[wallpaper] no se pudo cargar {:?}: {}", path, e);
+            tracing::warn!("[wallpaper] no se pudo decodificar {:?}: {}", path, e);
             return None;
         }
     };

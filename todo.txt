@@ -1,4 +1,5 @@
 // VINLAND - COMPOSITOR WAYLAND
+// todo (todo) o todo to-do!
 // este archivo trackea solo cosas del compositor.
 // hotkeys, barra, lanzador, etc -> van al DE (proyecto separado)
 //
@@ -86,6 +87,11 @@
   * const GAP en state.rs
   * separar en Config.tiling.gap_inner (entre ventanas) y Config.tiling.gap_outer (borde)
 
+  // mayoritariamente hardcodeado.
+
+- numero de columnas
+  * siempre 2 por defecto
+
 - layout por defecto
   * siempre MasterStack, no cambiable sin recompilar
   * Config.tiling.layout: enum { MasterStack, Monocle, Columns, Spiral, ... }
@@ -98,10 +104,21 @@
   * siempre 1
   * Config.tiling.master_count: u32 (default 1)
 
+
+
 [VENTANAS FLOTANTES]
 - tamaño por defecto de diálogos (ventanas con padre)
   * xdg_shell.rs: dialog_w = 600, dialog_h = 500 (hardcodeado 2 veces: new_toplevel y parent_changed)
   * Config.floating.default_dialog_size: (u32, u32)
+
+- posicion general:
+  * hoy por defecto al centro.
+  * Config.floating.default_position: (u32, u32)
+  // u32 = cualquier numero entero positivo
+  // para usarlo en posiciones de pixeles en la pantalla.
+  // "u32" (unsigned integer 32 bits) se usa comunmente para
+  // representar coordenadas (x, y), tamaños (width, height), o conteos de pixeles
+  // en pantallas y graficos, ya que no puede ser negativo.
 
 - reglas por clase de ventana (window rules)
   * ninguna ventana puede ser forzada a flotar o a un tamaño fijo desde config
@@ -109,14 +126,17 @@
     WindowRule { app_id: String, title_regex: Option<String>, action: RuleAction }
     RuleAction: Float | Tile | FloatSize(w,h) | Workspace(u8) | Opacity(f32) | ...
 
+
+
 [OUTPUT / MONITOR]
 - refresh rate
-  * state.rs: refresh: 144_000 (mHz, hardcodeado)
+  * state.rs: refresh: 144_000 (mHz, hardcodeado, corregir)
   * Config.output.refresh_rate: u32 (o Auto desde modo preferido del monitor)
 
 - nombre del output / make / model
   * "vinland-output", "Vinland", "Virtual" hardcodeados en state.rs
   * en winit es siempre virtual; en DRM debe venir de EDID
+   DRM = direct rendering manager EDID = 
 
 - posición del output
   * (0, 0) hardcodeado
@@ -156,6 +176,7 @@
   * Config.cursor.custom_path: Option<PathBuf>
   * si está presente, cargarlo como textura GL en vez del theme
   * formatos: PNG (con punto de hotspot configurable), xcur, SVG (rasterizar)
+  // anda a medias, en el clipboard se suele romper
 
 - hotspot del cursor custom
   * Config.cursor.custom_hotspot: (u32, u32) (default (0, 0))
@@ -163,7 +184,9 @@
 - cursor animado (xcursor con frames)
   * el formato xcursor soporta animaciones -> leer frame delay y ciclar en render
 
-[FONDO DE PANTALLA / WALLPAPER]
+
+
+[FONDO DE PANTALLA / WALLPAPER] // no 100% funcional aun
 - color de fondo
   * render.rs: frame.clear([0.0, 0.0, 0.0, 1.0], ...) negro sólido hardcodeado
   * Config.background.color: [f32; 4]
@@ -192,7 +215,7 @@
 
 - protocolo: xdg-decoration-unstable-v1 (negociación CSD/SSD)
   * smithay: XdgDecorationState + XdgDecorationHandler
-  * Config.decoration.mode: enum { ClientSide, ServerSide, Auto }
+  * Config.decoration.mode: enDocuments/github/vinland/um { ClientSide, ServerSide, Auto }
 
 - borde de ventana activa / inactiva (SSD)
   * Config.decoration.border_width: u32
