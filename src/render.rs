@@ -22,7 +22,7 @@ use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::desktop::PopupManager;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::utils::IsAlive;
-use smithay::utils::{Physical, Rectangle, Scale, Transform};
+use smithay::utils::{Rectangle, Scale, Transform};
 
 use crate::config::ScaleMode;
 use crate::handlers::layer_shell::layer_surface_geometry;
@@ -216,51 +216,69 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         let img_w = tex_size.w as f32;
         let img_h = tex_size.h as f32;
 
-        // Calcular el rectángulo destino (Physical) según el modo de escala
-        let dest: Rectangle<i32, Physical> = match state.config.background.wallpaper_mode {
-            ScaleMode::Stretch => Rectangle::new((0, 0).into(), (size.w, size.h).into()),
+        let (src, dest) = match state.config.background.wallpaper_mode {
+            ScaleMode::Stretch => (
+                Rectangle::new((0.0, 0.0).into(), (img_w as f64, img_h as f64).into()),
+                Rectangle::new((0, 0).into(), (size.w, size.h).into()),
+            ),
             ScaleMode::Fill => {
-                // escalar al mayor factor posible (sin bandas, recortando)
-                let scale_x = out_w / img_w;
-                let scale_y = out_h / img_h;
-                let s = scale_x.max(scale_y);
-                let sw = (img_w * s) as i32;
-                let sh = (img_h * s) as i32;
-                let ox = (size.w - sw) / 2;
-                let oy = (size.h - sh) / 2;
-                Rectangle::new((ox, oy).into(), (sw, sh).into())
+                let out_ratio = out_w / out_h;
+                let img_ratio = img_w / img_h;
+                let (crop_w, crop_h) = if img_ratio > out_ratio {
+                    // si la imagen es mas ancha que la pantalla se recortan los lados
+                    (img_h * out_ratio, img_h)
+                } else {
+                    // si la imagen es mas alta que la pantalla se recortan arriba y abajo
+                    (img_w, img_w / out_ratio)
+                };
+                let crop_x = (img_w - crop_w) / 2.0;
+                let crop_y = (img_h - crop_h) / 2.0;
+                (
+                    Rectangle::new(
+                        (crop_x as f64, crop_y as f64).into(),
+                        (crop_w as f64, crop_h as f64).into(),
+                    ),
+                    Rectangle::new((0, 0).into(), (size.w, size.h).into()),
+                )
             }
             ScaleMode::Fit => {
-                // escalar al menor factor (bandas del color de fondo a los costados)
-                let scale_x = out_w / img_w;
-                let scale_y = out_h / img_h;
-                let s = scale_x.min(scale_y);
-                let sw = (img_w * s) as i32;
-                let sh = (img_h * s) as i32;
-                let ox = (size.w - sw) / 2;
-                let oy = (size.h - sh) / 2;
-                Rectangle::new((ox, oy).into(), (sw, sh).into())
+                let out_ratio = out_w / out_h;
+                let img_ratio = img_w / img_h;
+                let (fit_w, fit_h) = if img_ratio > out_ratio {
+                    // La imagen es más ancha -> franjas arriba y abajo
+                    (out_w, out_w / img_ratio)
+                } else {
+                    // La imagen es más alta -> franjas a los lados
+                    (out_h * img_ratio, out_h)
+                };
+                let ox = ((out_w - fit_w) / 2.0) as i32;
+                let oy = ((out_h - fit_h) / 2.0) as i32;
+                (
+                    Rectangle::new((0.0, 0.0).into(), (img_w as f64, img_h as f64).into()),
+                    Rectangle::new((ox, oy).into(), (fit_w as i32, fit_h as i32).into()),
+                )
             }
-            ScaleMode::Center => {
-                // sin escalar, solo centrar
-                let ox = (size.w - tex_size.w) / 2;
-                let oy = (size.h - tex_size.h) / 2;
-                Rectangle::new((ox, oy).into(), (tex_size.w, tex_size.h).into())
-            }
-            ScaleMode::Tile => {
-                // un solo tile centrado por ahora
-                // (tile real requeriría múltiples draw calls)
-                let ox = (size.w - tex_size.w) / 2;
-                let oy = (size.h - tex_size.h) / 2;
-                Rectangle::new((ox, oy).into(), (tex_size.w, tex_size.h).into())
+            ScaleMode::Center | ScaleMode::Tile => {
+                if img_w >= out_w && img_h >= out_h {
+                    let crop_x = (img_w - out_w) / 2.0;
+                    let crop_y = (img_h - out_h) / 2.0;
+                    (
+                        Rectangle::new(
+                            (crop_x as f64, crop_y as f64).into(),
+                            (out_w as f64, out_h as f64).into(),
+                        ),
+                        Rectangle::new((0, 0).into(), (size.w, size.h).into()),
+                    )
+                } else {
+                    let ox = ((out_w - img_w) / 2.0) as i32;
+                    let oy = ((out_h - img_h) / 2.0) as i32;
+                    (
+                        Rectangle::new((0.0, 0.0).into(), (img_w as f64, img_h as f64).into()),
+                        Rectangle::new((ox, oy).into(), (img_w as i32, img_h as i32).into()),
+                    )
+                }
             }
         };
-
-        // src = todo el buffer de la imagen
-        let src = smithay::utils::Rectangle::new(
-            (0.0, 0.0).into(),
-            (tex_size.w as f64, tex_size.h as f64).into(),
-        );
 
         if let Err(e) = frame.render_texture_from_to(
             tex,
@@ -273,7 +291,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             None,
             &[],
         ) {
-            info!("[vinpaper] error al dibujar textura: {:?}", e);
+            info!("[wallpaper] error al dibujar textura: {:?}", e);
         }
     }
 
