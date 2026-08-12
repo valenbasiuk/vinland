@@ -2,8 +2,9 @@
 // struct central de vinland y constructor
 
 use calloop::LoopSignal;
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::with_renderer_surface_state;
+use smithay::backend::renderer::ImportMem;
 use smithay::backend::winit::WinitGraphicsBackend;
 use smithay::desktop::PopupManager;
 use smithay::input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatState};
@@ -12,9 +13,9 @@ use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::shell::wlr_layer::{Layer, LayerSurface, WlrLayerShellState};
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellState};
 use smithay::wayland::shm::ShmState;
-use smithay::wayland::shell::wlr_layer::{Layer, LayerSurface, WlrLayerShellState};
 use smithay::wayland::xdg_foreign::XdgForeignState;
 use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::{X11Wm, XWayland};
@@ -47,7 +48,7 @@ pub struct Vinland {
     pub backend: WinitGraphicsBackend<GlesRenderer>,
     pub loop_signal: LoopSignal,
     pub windows: Vec<Window>,
-    pub popups: PopupManager,        // gestor de popups de Smithay (maneja jerarquía, posicionamiento y grabs)
+    pub popups: PopupManager, // gestor de popups de Smithay (maneja jerarquía, posicionamiento y grabs)
     pub pointer_pos: Point<f64, Logical>,
     pub data_device_state: DataDeviceState,
     pub cursor_status: CursorImageStatus,
@@ -55,12 +56,47 @@ pub struct Vinland {
     pub layer_shell_state: WlrLayerShellState,
     // layer surfaces activas, ordenadas por capa (Background, Bottom, Top, Overlay)
     pub layer_surfaces: Vec<LayerSurfaceItem>,
+    // textura GL del wallpaper (None si no hay wallpaper configurado)
+    pub wallpaper_texture: Option<GlesTexture>,
     #[allow(dead_code)]
     pub xwayland: Option<XWayland>,
     pub xwm: Option<X11Wm>,
     pub xdisplay: Option<u32>,
     pub xwayland_shell_state: XWaylandShellState,
     pub config: Config,
+}
+
+/// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
+/// Retorna None si no hay wallpaper configurado o si falla la carga.
+pub fn load_wallpaper(renderer: &mut GlesRenderer, config: &Config) -> Option<GlesTexture> {
+    let path = config.background.wallpaper.as_ref()?;
+
+    let img = match image::open(path) {
+        Ok(i) => i.into_rgba8(),
+        Err(e) => {
+            tracing::warn!("[wallpaper] no se pudo cargar {:?}: {}", path, e);
+            return None;
+        }
+    };
+
+    let (w, h) = img.dimensions();
+    let data: Vec<u8> = img.into_raw();
+
+    match renderer.import_memory(
+        &data,
+        smithay::backend::allocator::Fourcc::Abgr8888,
+        smithay::utils::Size::from((w as i32, h as i32)),
+        false, // no flipped
+    ) {
+        Ok(tex) => {
+            tracing::info!("[wallpaper] textura cargada {}×{}", w, h);
+            Some(tex)
+        }
+        Err(e) => {
+            tracing::warn!("[wallpaper] error al subir textura: {:?}", e);
+            None
+        }
+    }
 }
 
 // clientstate -> datos por cliente conectado
@@ -100,13 +136,14 @@ impl Vinland {
         let mut seat = seat_state.new_wl_seat(&display_handle, "vinland-seat");
         seat.add_keyboard(
             XkbConfig {
-                layout:  &config.keyboard.layout,
+                layout: &config.keyboard.layout,
                 options: config.keyboard.options.clone(),
                 ..XkbConfig::default()
             },
             config.keyboard.repeat_delay,
             config.keyboard.repeat_rate,
-        ).unwrap();
+        )
+        .unwrap();
         seat.add_pointer();
 
         // backend de winit -> renderiza dentro de una ventana del compositor host
@@ -156,6 +193,7 @@ impl Vinland {
             xdg_foreign_state,
             layer_shell_state,
             layer_surfaces: Vec::new(),
+            wallpaper_texture: None, // se carga en main.rs después de init
             windows: Vec::new(),
             popups: PopupManager::default(),
             pointer_pos: (0.0, 0.0).into(),
@@ -233,10 +271,7 @@ impl Vinland {
 
             if total_tiled == 1 {
                 // única ventana: fullscreen con margen exterior
-                win.rect = Rectangle::new(
-                    (gap, gap).into(),
-                    (w - gap * 2, h - gap * 2).into(),
-                );
+                win.rect = Rectangle::new((gap, gap).into(), (w - gap * 2, h - gap * 2).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((w - gap * 2, h - gap * 2)));
                 });
@@ -244,10 +279,7 @@ impl Vinland {
             } else if tiled_idx == 0 {
                 // master: mitad izquierda con gaps
                 let master_w = w / 2 - gap - gap / 2;
-                win.rect = Rectangle::new(
-                    (gap, gap).into(),
-                    (master_w, h - gap * 2).into(),
-                );
+                win.rect = Rectangle::new((gap, gap).into(), (master_w, h - gap * 2).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((master_w, h - gap * 2)));
                 });
@@ -263,10 +295,7 @@ impl Vinland {
                 let y = slot_h * stack_idx + gap;
                 let slot_h_gapped = slot_h - gap * 2;
 
-                win.rect = Rectangle::new(
-                    (stack_x, y).into(),
-                    (stack_w, slot_h_gapped).into(),
-                );
+                win.rect = Rectangle::new((stack_x, y).into(), (stack_w, slot_h_gapped).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((stack_w, slot_h_gapped)));
                 });

@@ -4,6 +4,7 @@
 // #[serde(default)] -> si un campo no está en el archivo, usa Default
 
 use serde::Deserialize;
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 #[serde(default)]
@@ -30,10 +31,37 @@ pub struct KeyboardConfig {
     pub repeat_rate: i32,        // pulsaciones/segundo al mantener
 }
 
+/// Cómo escalar el wallpaper al tamaño del output
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ScaleMode {
+    /// Escala manteniendo aspect ratio, sin recortar (puede dejar bandas)
+    Fit,
+    /// Escala manteniendo aspect ratio, recortando lo que sobra
+    Fill,
+    /// Estira la imagen para que ocupe exactamente el output (puede deformar)
+    Stretch,
+    /// Centra sin escalar
+    Center,
+    /// Repite la imagen como mosaico
+    Tile,
+}
+
+impl Default for ScaleMode {
+    fn default() -> Self {
+        ScaleMode::Fill
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct BackgroundConfig {
-    pub color: [f32; 4], // RGBA, 0.0–1.0
+    /// color de fondo default
+    pub color: [f32; 4],
+    /// Ruta a la imagen de fondo (PNG, JPEG, WebP, etc.)
+    pub wallpaper: Option<PathBuf>,
+    /// Cómo escalar el wallpaper
+    pub wallpaper_mode: ScaleMode,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,7 +103,9 @@ impl Default for KeyboardConfig {
 impl Default for BackgroundConfig {
     fn default() -> Self {
         Self {
-            color: [0.0, 0.0, 0.0, 1.0],
+            color: [0.05, 0.05, 0.1, 1.0], // azul oscuro por defecto
+            wallpaper: None,
+            wallpaper_mode: ScaleMode::Fill,
         }
     }
 }

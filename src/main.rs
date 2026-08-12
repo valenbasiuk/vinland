@@ -33,6 +33,12 @@ fn main() {
     let (mut state, winit_evt_loop) = Vinland::new(&display, event_loop.get_signal(), config);
     info!("compositor inicializado");
 
+    // cargar wallpaper (si está configurado) ahora que el renderer ya está listo
+    {
+        let (renderer, _fb) = state.backend.bind().expect("bind para wallpaper");
+        state.wallpaper_texture = state::load_wallpaper(renderer, &state.config);
+    }
+
     let loop_handle = event_loop.handle();
 
     // fuente 1 -> display wayland (mensajes entrantes de clientes)
