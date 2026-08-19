@@ -260,7 +260,7 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# =====================================
 color = [0.05, 0.05, 0.1, 1.0]
 
 # ruta a la imagen de fondo (PNG, JPEG, WebP)
-# wallpaper = "~/Pictures/wallpaper.png"
+wallpaper = "~/vinland/common/perfect_hue_5.jpg"
 
 # modo de escalado: "fill" (cubre recortando), "fit" (con bandas),
 # "stretch" (estira), "center" (centrado), "tile" (mosaico)
