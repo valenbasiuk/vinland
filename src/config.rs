@@ -154,20 +154,33 @@ impl Config {
         use smithay::input::keyboard::Keysym as K;
 
         let digits = [
-            K::_1, K::_2, K::_3, K::_4, K::_5,
-            K::_6, K::_7, K::_8, K::_9,
+            K::_1,
+            K::_2,
+            K::_3,
+            K::_4,
+            K::_5,
+            K::_6,
+            K::_7,
+            K::_8,
+            K::_9,
         ];
 
         for (i, &sym) in digits.iter().enumerate() {
             // Super+N -> cambiar a workspace N
             self.parsed_keybinds.push(ParsedKeybind {
-                logo: true, shift: false, ctrl: false, alt: false,
+                logo: true,
+                shift: false,
+                ctrl: false,
+                alt: false,
                 sym,
                 action: KeyAction::Workspace(i),
             });
             // Super+Shift+N -> mover ventana activa a workspace N
             self.parsed_keybinds.push(ParsedKeybind {
-                logo: true, shift: true, ctrl: false, alt: false,
+                logo: true,
+                shift: true,
+                ctrl: false,
+                alt: false,
                 sym,
                 action: KeyAction::MoveToWorkspace(i),
             });
@@ -175,21 +188,30 @@ impl Config {
 
         // Super+Shift+Q -> cerrar ventana activa
         self.parsed_keybinds.push(ParsedKeybind {
-            logo: true, shift: true, ctrl: false, alt: false,
+            logo: true,
+            shift: true,
+            ctrl: false,
+            alt: false,
             sym: K::Q,
             action: KeyAction::Close,
         });
 
         // Super+Shift+E -> salir del compositor
         self.parsed_keybinds.push(ParsedKeybind {
-            logo: true, shift: true, ctrl: false, alt: false,
+            logo: true,
+            shift: true,
+            ctrl: false,
+            alt: false,
             sym: K::E,
             action: KeyAction::Exit,
         });
 
         // Super+Return -> lanzar terminal
         self.parsed_keybinds.push(ParsedKeybind {
-            logo: true, shift: false, ctrl: false, alt: false,
+            logo: true,
+            shift: false,
+            ctrl: false,
+            alt: false,
             sym: K::Return,
             action: KeyAction::Exec("alacritty".to_string()),
         });
@@ -206,10 +228,21 @@ impl Config {
         for (key_str, action_str) in &self.keybinds {
             match (parse_key_combination(key_str), parse_action(action_str)) {
                 (Some((logo, shift, ctrl, alt, sym)), Some(action)) => {
-                    self.parsed_keybinds.push(ParsedKeybind { logo, shift, ctrl, alt, sym, action });
+                    self.parsed_keybinds.push(ParsedKeybind {
+                        logo,
+                        shift,
+                        ctrl,
+                        alt,
+                        sym,
+                        action,
+                    });
                 }
                 _ => {
-                    tracing::warn!("vinland: atajo invalido en config.toml: '{}' = '{}'", key_str, action_str);
+                    tracing::warn!(
+                        "vinland: atajo invalido en config.toml: '{}' = '{}'",
+                        key_str,
+                        action_str
+                    );
                 }
             }
         }
@@ -223,11 +256,11 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# =====================================
 # ==============================================================================
 
 [background]
-# color de fondo en formato [R, G, B, A] con valores de 0.0 a 1.0
+# [R, G, B, A]
 color = [0.05, 0.05, 0.1, 1.0]
 
 # ruta a la imagen de fondo (PNG, JPEG, WebP)
-# wallpaper = "/home/usuario/Pictures/wallpaper.png"
+# wallpaper = "~/Pictures/wallpaper.png"
 
 # modo de escalado: "fill" (cubre recortando), "fit" (con bandas),
 # "stretch" (estira), "center" (centrado), "tile" (mosaico)
@@ -239,10 +272,10 @@ master_ratio = 0.55
 
 [keyboard]
 # distribucion del teclado (ej: "es", "latam", "us")
-layout = "latam"
+layout = "us"
 # repeat_delay en ms, repeat_rate en pulsaciones/segundo
-repeat_delay = 200
-repeat_rate = 25
+repeat_delay = 180
+repeat_rate = 60
 
 [floating]
 dialog_width = 600
@@ -273,7 +306,6 @@ dialog_height = 500
 "Super+Shift+9" = "move_to_workspace 9"
 
 "Super+Shift+q" = "close"
-"Super+Shift+e" = "exit"
 "Super+Return" = "exec alacritty"
 "#;
 
@@ -300,7 +332,7 @@ pub fn load() -> Config {
                 let _ = std::fs::create_dir_all(parent);
             }
             match std::fs::write(&path, DEFAULT_CONFIG_TEMPLATE) {
-                Ok(_)  => tracing::info!("vinland: config creado en {:?}", path),
+                Ok(_) => tracing::info!("vinland: config creado en {:?}", path),
                 Err(e) => tracing::warn!("vinland: no se pudo crear config: {}", e),
             }
             return Config::default();
@@ -325,7 +357,9 @@ pub fn load() -> Config {
 
 // parsea una combinacion de teclas como "Super+Shift+1" o "Ctrl+Alt+t"
 // retorna (logo, shift, ctrl, alt, keysym) o None si la combinacion es invalida
-fn parse_key_combination(s: &str) -> Option<(bool, bool, bool, bool, smithay::input::keyboard::Keysym)> {
+fn parse_key_combination(
+    s: &str,
+) -> Option<(bool, bool, bool, bool, smithay::input::keyboard::Keysym)> {
     use smithay::input::keyboard::xkb;
 
     let parts: Vec<&str> = s.split('+').map(|p| p.trim()).collect();
@@ -333,19 +367,19 @@ fn parse_key_combination(s: &str) -> Option<(bool, bool, bool, bool, smithay::in
         return None;
     }
 
-    let mut logo  = false;
+    let mut logo = false;
     let mut shift = false;
-    let mut ctrl  = false;
-    let mut alt   = false;
+    let mut ctrl = false;
+    let mut alt = false;
     let mut key_name: Option<&str> = None;
 
     for part in parts {
         match part.to_lowercase().as_str() {
-            "super" | "mod4" | "logo" | "win" => logo  = true,
-            "shift"                            => shift = true,
-            "ctrl" | "control"                 => ctrl  = true,
-            "alt"  | "mod1"                    => alt   = true,
-            _                                  => key_name = Some(part),
+            "super" | "mod4" | "logo" | "win" => logo = true,
+            "shift" => shift = true,
+            "ctrl" | "control" => ctrl = true,
+            "alt" | "mod1" => alt = true,
+            _ => key_name = Some(part),
         }
     }
 
@@ -354,10 +388,10 @@ fn parse_key_combination(s: &str) -> Option<(bool, bool, bool, bool, smithay::in
     // nombres comunes que xkb no reconoce directamente
     let sym = match key_str.to_lowercase().as_str() {
         "return" | "enter" => smithay::input::keyboard::Keysym::Return,
-        "esc"   | "escape" => smithay::input::keyboard::Keysym::Escape,
-        "space"            => smithay::input::keyboard::Keysym::space,
-        "backspace"        => smithay::input::keyboard::Keysym::BackSpace,
-        "tab"              => smithay::input::keyboard::Keysym::Tab,
+        "esc" | "escape" => smithay::input::keyboard::Keysym::Escape,
+        "space" => smithay::input::keyboard::Keysym::space,
+        "backspace" => smithay::input::keyboard::Keysym::BackSpace,
+        "tab" => smithay::input::keyboard::Keysym::Tab,
         _ => {
             // resolver por nombre xkb (insensible a mayusculas primero)
             let sym = xkb::keysym_from_name(key_str, xkb::KEYSYM_CASE_INSENSITIVE);
@@ -390,11 +424,13 @@ fn parse_action(s: &str) -> Option<KeyAction> {
         }
         "move_to_workspace" | "movetoworkspace" | "move_workspace" => {
             let n = parts.get(1)?.parse::<usize>().ok()?;
-            (1..=9).contains(&n).then_some(KeyAction::MoveToWorkspace(n - 1))
+            (1..=9)
+                .contains(&n)
+                .then_some(KeyAction::MoveToWorkspace(n - 1))
         }
-        "close" | "kill"  => Some(KeyAction::Close),
-        "exit"  | "quit"  => Some(KeyAction::Exit),
-        "exec"  | "spawn" => {
+        "close" | "kill" => Some(KeyAction::Close),
+        "exit" | "quit" => Some(KeyAction::Exit),
+        "exec" | "spawn" => {
             if parts.len() > 1 {
                 Some(KeyAction::Exec(parts[1..].join(" ")))
             } else {
