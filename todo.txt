@@ -26,6 +26,9 @@
 - minimizar ventanas
 - Xwayland (servidor X11 embebido y X11Wm)
 - zwlr_layer_shell_v1 (barras, docks, wallpapers, notificaciones)
+- wallpaper (soporte para png, jpeg, webp con modos fill, fit, stretch, center, tile)
+- workspaces (escritorios virtuales 1..9 con cambio de workspace y mover ventanas)
+- keybinds configurables (seccion [keybinds] en config.toml y auto-creacion del archivo)
 
 // ==============================================================================
 // PENDIENTE (bugs / features incompletas)
