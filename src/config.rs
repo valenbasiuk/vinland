@@ -58,7 +58,7 @@ impl Default for ScaleMode {
 pub struct BackgroundConfig {
     /// color de fondo default
     pub color: [f32; 4],
-    /// Ruta a la imagen de fondo (PNG, JPEG, WebP, etc.)
+    /// ruta a la imagen de fondo (PNG, JPEG, WebP, etc.)
     pub wallpaper: Option<PathBuf>,
     /// Cómo escalar el wallpaper
     pub wallpaper_mode: ScaleMode,

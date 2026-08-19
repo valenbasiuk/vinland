@@ -32,7 +32,7 @@ impl XdgShellHandler for Vinland {
         if surface.parent().is_some() {
             // No forzamos un tamaño fijo de 600x500; permitimos que el cliente especifique su propio tamaño
             let rect = Rectangle::new((100, 100).into(), (0, 0).into());
-            self.windows.push(Window {
+            self.windows_mut().push(Window {
                 surface: surface.clone(),
                 rect,
                 minimized: false,
@@ -42,7 +42,7 @@ impl XdgShellHandler for Vinland {
         } else {
             // ventana normal -> la agregamos con rect cero temporalmente
             // se recalcula el tiling cuando haga su primer commit con buffer
-            self.windows.push(Window {
+            self.windows_mut().push(Window {
                 surface: surface.clone(),
                 rect: Rectangle::new((0, 0).into(), (0, 0).into()),
                 minimized: false,
@@ -56,7 +56,7 @@ impl XdgShellHandler for Vinland {
         // Nota: para ventanas normales no enviamos configure aquí (lo hace retile())
         // pero sí para las que tienen padre.
         {
-            let win = self.windows.last_mut().unwrap();
+            let win = self.windows_mut().last_mut().unwrap();
             win.surface.with_pending_state(|s| {
                 s.states.set(xdg_toplevel::State::Activated);
             });
@@ -67,7 +67,7 @@ impl XdgShellHandler for Vinland {
 
         // foco de teclado a la ventana recien abierta
         let serial = SERIAL_COUNTER.next_serial();
-        let wl_surface = self.windows.last().unwrap().surface.wl_surface().clone();
+        let wl_surface = self.windows().last().unwrap().surface.wl_surface().clone();
         let keyboard = self.seat.get_keyboard().unwrap();
         keyboard.set_focus(self, Some(wl_surface), serial);
     }
@@ -84,7 +84,7 @@ impl XdgShellHandler for Vinland {
         // buscamos la ventana en nuestra lista (fue agregada con rect 0 por new_toplevel)
         // y la reposicionamos como floating centrada ahora que sabemos que tiene padre
         if let Some(win) = self
-            .windows
+            .windows_mut()
             .iter_mut()
             .find(|w| w.surface.wl_surface() == surface.wl_surface())
         {
@@ -98,7 +98,7 @@ impl XdgShellHandler for Vinland {
 
     // llamado cuando una ventana toplevel es cerrada por el cliente
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        self.windows
+        self.windows_mut()
             .retain(|w| w.surface.wl_surface() != surface.wl_surface());
         info!("ventana cerrada por el cliente");
         // retile() redistribuye el espacio entre las ventanas restantes
@@ -109,7 +109,7 @@ impl XdgShellHandler for Vinland {
     fn minimize_request(&mut self, surface: ToplevelSurface) {
         info!("solicitud de minimizar ventana");
         if let Some(win) = self
-            .windows
+            .windows_mut()
             .iter_mut()
             .find(|w| w.surface.wl_surface() == surface.wl_surface())
         {
@@ -216,7 +216,7 @@ impl Vinland {
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
             return;
         };
-        let Some(window) = self.windows.iter().find(|w| w.surface.wl_surface() == &root) else {
+        let Some(window) = self.windows().iter().find(|w| w.surface.wl_surface() == &root) else {
             return;
         };
 

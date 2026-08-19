@@ -60,7 +60,7 @@ impl CompositorHandler for Vinland {
         // Si la superficie pertenece a una de nuestras ventanas normales (sin padre)
         // y aún no ha sido configurada/tilada (su rect de tamaño es 0):
         let mut should_retile = false;
-        for w in self.windows.iter_mut() {
+        for w in self.windows_mut() {
             if w.surface.wl_surface() == surface
                 && w.surface.parent().is_none()
                 && w.rect.size.w == 0

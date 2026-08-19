@@ -30,6 +30,13 @@ pub struct Window {
     pub minimized: bool,
 }
 
+// workspace -> escritorio virtual, contiene sus propias ventanas
+// el compositor mantiene un vec de workspaces y un índice activo.
+// solo el workspace activo se renderiza y recibe input.
+pub struct Workspace {
+    pub windows: Vec<Window>,
+}
+
 pub struct LayerSurfaceItem {
     pub surface: LayerSurface,
     pub layer: Layer,
@@ -47,7 +54,8 @@ pub struct Vinland {
     pub output: Output,
     pub backend: WinitGraphicsBackend<GlesRenderer>,
     pub loop_signal: LoopSignal,
-    pub windows: Vec<Window>,
+    pub workspaces: Vec<Workspace>,
+    pub active_workspace: usize,
     pub popups: PopupManager, // gestor de popups de Smithay (maneja jerarquía, posicionamiento y grabs)
     pub pointer_pos: Point<f64, Logical>,
     pub data_device_state: DataDeviceState,
@@ -208,7 +216,9 @@ impl Vinland {
             layer_shell_state,
             layer_surfaces: Vec::new(),
             wallpaper_texture: None, // se carga en main.rs después de init
-            windows: Vec::new(),
+            // 9 workspaces vacíos, activo el 0 (índice base-0 = workspace 1 para el usuario)
+            workspaces: (0..9).map(|_| Workspace { windows: Vec::new() }).collect(),
+            active_workspace: 0,
             popups: PopupManager::default(),
             pointer_pos: (0.0, 0.0).into(),
             data_device_state,
@@ -223,6 +233,15 @@ impl Vinland {
         (state, winit_evt_loop)
     }
 
+    // helpers para acceder a las ventanas del workspace activo
+    pub fn windows(&self) -> &Vec<Window> {
+        &self.workspaces[self.active_workspace].windows
+    }
+
+    pub fn windows_mut(&mut self) -> &mut Vec<Window> {
+        &mut self.workspaces[self.active_workspace].windows
+    }
+
     // retile -> calcula y envía la nueva disposición tiling a todas las ventanas
     // ignora diálogos o ventanas que tienen padre (transient/floating)
     // también ignora ventanas normales temporales o auxiliares que no tienen buffer
@@ -231,7 +250,7 @@ impl Vinland {
 
         // contamos solo las ventanas sin padre que no estén minimizadas y que ya tengan un buffer o ya fueron tiladas (rect w > 0)
         let tiled_count = self
-            .windows
+            .windows()
             .iter()
             .filter(|w| {
                 !w.minimized
@@ -261,7 +280,7 @@ impl Vinland {
         let mut tiled_idx = 0;
         let total_tiled = tiled_count;
 
-        for win in self.windows.iter_mut() {
+        for win in self.windows_mut().iter_mut() {
             // si está minimizada, no la tilamos
             if win.minimized {
                 continue;

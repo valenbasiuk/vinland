@@ -10,6 +10,7 @@
 //   FEATURE   -> features nuevas que vale la pena meter en un compositor moderno
 //   PROTOCOLO -> extensiones Wayland estándar para soportar
 //   ARCH      -> cambios estructurales / refactors necesarios
+// reminder de codear todo en minusculas en comentarios
 
 // ==============================================================================
 // DONE

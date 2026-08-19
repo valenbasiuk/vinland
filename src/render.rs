@@ -48,6 +48,16 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     state.backend.window().set_cursor_visible(cursor_visible);
 
     // bind() -> prepara el renderer y obtiene el framebuffer del frame actual
+    // nota: bind() toma borrow mutable de state.backend, por lo tanto no podemos
+    // llamar state.windows() después (ambos borran &state). recolectamos los datos
+    // que necesitamos de las ventanas antes del bind, como snapshots simples.
+    let window_snap: Vec<(smithay::wayland::shell::xdg::ToplevelSurface, smithay::utils::Rectangle<i32, smithay::utils::Logical>)> = state
+        .windows()
+        .iter()
+        .filter(|w| !w.minimized && w.rect.size.w > 0 && w.rect.size.h > 0)
+        .map(|w| (w.surface.clone(), w.rect))
+        .collect();
+
     let (renderer, mut framebuffer) = state.backend.bind().unwrap();
 
     // 1. colectar elementos de las ventanas en su posición de tiling
@@ -63,21 +73,13 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let mut window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
     let mut popup_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 
-    for window in &state.windows {
-        // si la ventana está minimizada, no la dibujamos
-        if window.minimized {
-            continue;
-        }
-        // si la ventana no ha sido tilada aún (rect w/h == 0), no la dibujamos
-        if window.rect.size.w == 0 || window.rect.size.h == 0 {
-            continue;
-        }
-        // to_physical_precise_round: convierte i32 logical a i32 physical sin perder precisión
-        let pos = window.rect.loc.to_physical_precise_round(scale);
+    for (surface, rect) in &window_snap {
+        // (el snapshot ya filtró minimizadas y con rect 0)
+        let pos = rect.loc.to_physical_precise_round(scale);
         let elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
             render_elements_from_surface_tree(
                 renderer,
-                window.surface.wl_surface(),
+                surface.wl_surface(),
                 pos,
                 scale,
                 1.0,
@@ -86,10 +88,9 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         window_elements.extend(elems);
 
         // 1b. popups xdg de esta ventana (PopupManager)
-        for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface())
-        {
+        for (popup, popup_location) in PopupManager::popups_for_surface(surface.wl_surface()) {
             let popup_geo_loc = popup.geometry().loc;
-            let popup_loc = window.rect.loc + popup_location - popup_geo_loc;
+            let popup_loc = rect.loc + popup_location - popup_geo_loc;
             let popup_pos = popup_loc.to_physical_precise_round(scale);
             let popup_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
                 render_elements_from_surface_tree(
@@ -312,19 +313,20 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
 
     // send_frames_surface_tree -> avisa a cada cliente que su frame fue mostrado
     let output = state.output.clone();
-    for window in &state.windows {
+    // usamos el snapshot que ya teníamos (evita conflicto de borrow con renderer activo)
+    for (surface, _rect) in &window_snap {
         // frame callback al toplevel
         send_frames_surface_tree(
-            window.surface.wl_surface(),
+            surface.wl_surface(),
             &output,
             start_time.elapsed(),
             None,
             |_, _| Some(output.clone()),
         );
         // frame callbacks a los popups de esta ventana
-        // IMPORTANTE: sin esto, los popups nunca reciben la señal de "tu frame fue mostrado"
+        // importante: sin esto, los popups nunca reciben la señal de "tu frame fue mostrado"
         // y el cliente queda esperando indefinidamente -> broken pipe / crash
-        for (popup, _) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+        for (popup, _) in PopupManager::popups_for_surface(surface.wl_surface()) {
             send_frames_surface_tree(
                 popup.wl_surface(),
                 &output,

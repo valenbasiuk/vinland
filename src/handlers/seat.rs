@@ -247,7 +247,7 @@ impl Vinland {
         }
 
         // 3. Ventanas Toplevel y sus Popups
-        for window in self.windows.iter().rev() {
+        for window in self.windows().iter().rev() {
             if window.minimized {
                 continue;
             }
@@ -304,7 +304,7 @@ impl Vinland {
 
         let target_surface = self.surface_under(pos).map(|(s, _)| s);
 
-        for window in &mut self.windows {
+        for window in self.windows_mut() {
             let is_focused = target_surface
                 .as_ref()
                 .map(|s| {
