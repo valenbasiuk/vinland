@@ -66,7 +66,6 @@ impl Vinland {
 
                 // input() -> despacha el evento al cliente con foco actual.
                 // el closure recibe (mods, handle) y decide si interceptar (Intercept) o pasar (Forward).
-                // mods.logo == true -> Super (tecla Windows) está presionada.
                 keyboard.input(
                     self,
                     event.key_code(),
@@ -75,74 +74,86 @@ impl Vinland {
                     time,
                     |state, mods, handle| {
                         use smithay::backend::input::KeyState;
+                        use crate::config::KeyAction;
 
                         // solo actuamos en key press, no en release
                         if event.state() != KeyState::Pressed {
                             return FilterResult::Forward;
                         }
 
-                        let sym = handle.modified_sym();
+                        let raw_syms = handle.raw_syms();
+                        let mod_sym = handle.modified_sym();
 
-                        // Super+1..9 -> cambiar workspace
-                        if mods.logo && !mods.shift {
-                            use smithay::input::keyboard::Keysym as K;
-                            let ws_idx: Option<usize> = [
-                                K::_1, K::_2, K::_3, K::_4, K::_5,
-                                K::_6, K::_7, K::_8, K::_9,
-                            ].iter().position(|k| *k == sym);
-                            if let Some(idx) = ws_idx {
-                                if idx < state.workspaces.len() && idx != state.active_workspace {
-                                    info!("[workspace] cambiar a workspace {}", idx + 1);
-                                    state.active_workspace = idx;
-                                    state.retile();
-                                    // quitar foco del teclado (la ventana que tenía foco ya no está visible)
-                                    let kb = state.seat.get_keyboard().unwrap();
-                                    kb.set_focus(state, None, serial);
-                                }
-                                return FilterResult::Intercept(());
+                        // buscar si alguna keybind configurada coincide con los modificadores y la tecla
+                        let matched_bind = state.config.parsed_keybinds.iter().find(|bind| {
+                            // chequear modificadores
+                            if bind.logo != mods.logo || bind.shift != mods.shift || bind.ctrl != mods.ctrl || bind.alt != mods.alt {
+                                return false;
                             }
-                        }
 
-                        // Super+Shift+1..9 -> mover ventana focused al workspace N
-                        if mods.logo && mods.shift {
-                            use smithay::input::keyboard::Keysym as K;
-                            // el keysym activo con Shift depende del layout;
-                            // probamos tanto el digit como el shifted symbol
-                            let digit_syms: [K; 9] = [
-                                K::_1, K::_2, K::_3, K::_4, K::_5,
-                                K::_6, K::_7, K::_8, K::_9,
-                            ];
-                            let shifted_syms: [K; 9] = [
-                                K::exclam, K::at, K::numbersign, K::dollar, K::percent,
-                                K::asciicircum, K::ampersand, K::asterisk, K::parenleft,
-                            ];
-                            let ws_idx: Option<usize> = digit_syms.iter()
-                                .position(|k| *k == sym)
-                                .or_else(|| shifted_syms.iter().position(|k| *k == sym));
-                            if let Some(dest) = ws_idx {
-                                if dest < state.workspaces.len() && dest != state.active_workspace {
-                                    // buscar la ventana con foco en el workspace activo
-                                    let kb = state.seat.get_keyboard().unwrap();
-                                    let focused_surface = kb.current_focus();
+                            // chequear tecla: coincide con la tecla sin shift (raw) o con la tecla modificada
+                            raw_syms.contains(&bind.sym) || mod_sym == bind.sym
+                        });
 
-                                    let focused_idx = focused_surface.as_ref().and_then(|fs| {
-                                        state.workspaces[state.active_workspace]
-                                            .windows
-                                            .iter()
-                                            .position(|w| w.surface.wl_surface() == fs)
-                                    });
-
-                                    if let Some(widx) = focused_idx {
-                                        let win = state.workspaces[state.active_workspace].windows.remove(widx);
-                                        info!("[workspace] mover ventana al workspace {}", dest + 1);
-                                        state.workspaces[dest].windows.push(win);
+                        if let Some(bind) = matched_bind {
+                            match &bind.action {
+                                KeyAction::Workspace(idx) => {
+                                    let idx = *idx;
+                                    if idx < state.workspaces.len() && idx != state.active_workspace {
+                                        info!("[workspace] cambiar a workspace {}", idx + 1);
+                                        state.active_workspace = idx;
                                         state.retile();
+                                        // quitar foco del teclado (la ventana que tenia foco ya no esta visible)
                                         let kb = state.seat.get_keyboard().unwrap();
                                         kb.set_focus(state, None, serial);
                                     }
                                 }
-                                return FilterResult::Intercept(());
+                                KeyAction::MoveToWorkspace(dest) => {
+                                    let dest = *dest;
+                                    if dest < state.workspaces.len() && dest != state.active_workspace {
+                                        // buscar la ventana con foco en el workspace activo
+                                        let kb = state.seat.get_keyboard().unwrap();
+                                        let focused_surface = kb.current_focus();
+
+                                        let focused_idx = focused_surface.as_ref().and_then(|fs| {
+                                            state.workspaces[state.active_workspace]
+                                                .windows
+                                                .iter()
+                                                .position(|w| w.surface.wl_surface() == fs)
+                                        });
+
+                                        if let Some(widx) = focused_idx {
+                                            let win = state.workspaces[state.active_workspace].windows.remove(widx);
+                                            info!("[workspace] mover ventana al workspace {}", dest + 1);
+                                            state.workspaces[dest].windows.push(win);
+                                            state.retile();
+                                            let kb = state.seat.get_keyboard().unwrap();
+                                            kb.set_focus(state, None, serial);
+                                        }
+                                    }
+                                }
+                                KeyAction::Close => {
+                                    let kb = state.seat.get_keyboard().unwrap();
+                                    let focused_surface = kb.current_focus();
+                                    if let Some(fs) = focused_surface {
+                                        if let Some(win) = state.windows().iter().find(|w| w.surface.wl_surface() == &fs) {
+                                            info!("[window] enviando close request a la ventana activa");
+                                            win.surface.send_close();
+                                        }
+                                    }
+                                }
+                                KeyAction::Exit => {
+                                    info!("[vinland] cerrando compositor por atajo de teclado");
+                                    state.loop_signal.stop();
+                                }
+                                KeyAction::Exec(cmd) => {
+                                    info!("[exec] ejecutando comando: {}", cmd);
+                                    if let Err(e) = std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+                                        tracing::warn!("[exec] fallo al ejecutar '{}': {}", cmd, e);
+                                    }
+                                }
                             }
+                            return FilterResult::Intercept(());
                         }
 
                         FilterResult::Forward
