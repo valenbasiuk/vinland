@@ -1,10 +1,32 @@
 // config.rs
-// structs de configuración de vinland, cargados desde config.toml
-// cada sección del TOML ([tiling], [keyboard], etc.) mapea a un struct
-// #[serde(default)] -> si un campo no está en el archivo, usa Default
+// structs de configuracion de vinland, cargados desde config.toml
+// cada seccion del toml ([tiling], [keyboard], [keybinds], etc.) mapea a un struct
+// #[serde(default)] -> si un campo no esta en el archivo, usa default
 
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
+
+// keyaction -> acciones que puede ejecutar un atajo de teclado
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyAction {
+    Workspace(usize),       // indice base 0 (workspace 1 -> 0)
+    MoveToWorkspace(usize), // indice base 0
+    Close,
+    Exit,
+    Exec(String),
+}
+
+// parsedkeybind -> un atajo de teclado ya resuelto con sus modificadores y accion
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedKeybind {
+    pub logo: bool,
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub sym: smithay::input::keyboard::Keysym,
+    pub action: KeyAction,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(default)]
@@ -13,6 +35,12 @@ pub struct Config {
     pub keyboard: KeyboardConfig,
     pub background: BackgroundConfig,
     pub floating: FloatingConfig,
+    // tabla [keybinds] del toml: "Super+1" = "workspace 1"
+    #[serde(default)]
+    pub keybinds: HashMap<String, String>,
+    // atajos ya parseados, se llenan despues de cargar el toml
+    #[serde(skip)]
+    pub parsed_keybinds: Vec<ParsedKeybind>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,7 +99,7 @@ pub struct FloatingConfig {
     pub dialog_height: i32,
 }
 
-// defaults = valores que antes estaban hardcodeados en el código
+// defaults = valores que antes estaban hardcodeados en el codigo
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -79,6 +107,8 @@ impl Default for Config {
             keyboard: KeyboardConfig::default(),
             background: BackgroundConfig::default(),
             floating: FloatingConfig::default(),
+            keybinds: HashMap::new(),
+            parsed_keybinds: Vec::new(),
         }
     }
 }
