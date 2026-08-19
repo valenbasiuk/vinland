@@ -216,8 +216,69 @@ impl Config {
     }
 }
 
+// plantilla que se escribe en disco la primera vez que arranca el compositor
+const DEFAULT_CONFIG_TEMPLATE: &str = r#"# ==============================================================================
+# vinland - archivo de configuracion
+# ruta: ~/.config/vinland/config.toml
+# ==============================================================================
+
+[background]
+# color de fondo en formato [R, G, B, A] con valores de 0.0 a 1.0
+color = [0.05, 0.05, 0.1, 1.0]
+
+# ruta a la imagen de fondo (PNG, JPEG, WebP)
+# wallpaper = "/home/usuario/Pictures/wallpaper.png"
+
+# modo de escalado: "fill" (cubre recortando), "fit" (con bandas),
+# "stretch" (estira), "center" (centrado), "tile" (mosaico)
+wallpaper_mode = "fill"
+
+[tiling]
+gap = 8
+master_ratio = 0.55
+
+[keyboard]
+# distribucion del teclado (ej: "es", "latam", "us")
+layout = "latam"
+# repeat_delay en ms, repeat_rate en pulsaciones/segundo
+repeat_delay = 200
+repeat_rate = 25
+
+[floating]
+dialog_width = 600
+dialog_height = 500
+
+[keybinds]
+# formato: "MOD+TECLA" = "accion [argumentos]"
+# modificadores: Super (o Mod4/Logo), Shift, Ctrl, Alt
+# acciones: workspace <1-9>, move_to_workspace <1-9>, close, exit, exec <cmd>
+"Super+1" = "workspace 1"
+"Super+2" = "workspace 2"
+"Super+3" = "workspace 3"
+"Super+4" = "workspace 4"
+"Super+5" = "workspace 5"
+"Super+6" = "workspace 6"
+"Super+7" = "workspace 7"
+"Super+8" = "workspace 8"
+"Super+9" = "workspace 9"
+
+"Super+Shift+1" = "move_to_workspace 1"
+"Super+Shift+2" = "move_to_workspace 2"
+"Super+Shift+3" = "move_to_workspace 3"
+"Super+Shift+4" = "move_to_workspace 4"
+"Super+Shift+5" = "move_to_workspace 5"
+"Super+Shift+6" = "move_to_workspace 6"
+"Super+Shift+7" = "move_to_workspace 7"
+"Super+Shift+8" = "move_to_workspace 8"
+"Super+Shift+9" = "move_to_workspace 9"
+
+"Super+Shift+q" = "close"
+"Super+Shift+e" = "exit"
+"Super+Return" = "exec alacritty"
+"#;
+
 // load() $XDG_CONFIG_HOME/vinland/config.toml
-// si no existe o falla el parseo, devuelve Config::default() sin crashear
+// si no existe lo crea con la plantilla por defecto; si falla el parseo, usa defaults
 pub fn load() -> Config {
     let path = {
         let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -233,7 +294,17 @@ pub fn load() -> Config {
 
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Config::default(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // si el archivo no existe, lo creamos con la plantilla comentada
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match std::fs::write(&path, DEFAULT_CONFIG_TEMPLATE) {
+                Ok(_)  => tracing::info!("vinland: config creado en {:?}", path),
+                Err(e) => tracing::warn!("vinland: no se pudo crear config: {}", e),
+            }
+            return Config::default();
+        }
         Err(e) => {
             eprintln!("vinland: no se pudo leer {:?}: {}", path, e);
             return Config::default();
