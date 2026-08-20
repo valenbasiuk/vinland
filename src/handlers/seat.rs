@@ -103,9 +103,63 @@ impl Vinland {
                                         info!("[workspace] cambiar a workspace {}", idx + 1);
                                         state.active_workspace = idx;
                                         state.retile();
-                                        // quitar foco del teclado (la ventana que tenia foco ya no esta visible)
+                                        // enfocar la primera ventana visible del nuevo workspace (o None si esta vacio)
+                                        let first_win = state
+                                            .windows()
+                                            .iter()
+                                            .find(|w| !w.minimized)
+                                            .map(|w| w.surface.wl_surface().clone());
+                                        state.set_keyboard_focus_surface(first_win.as_ref(), serial);
+                                    }
+                                }
+                                KeyAction::FocusNext => {
+                                    let non_minimized: Vec<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface> = state
+                                        .windows()
+                                        .iter()
+                                        .filter(|w| !w.minimized)
+                                        .map(|w| w.surface.wl_surface().clone())
+                                        .collect();
+
+                                    if !non_minimized.is_empty() {
                                         let kb = state.seat.get_keyboard().unwrap();
-                                        kb.set_focus(state, None, serial);
+                                        let current_focus = kb.current_focus();
+                                        let next_idx = match current_focus.as_ref() {
+                                            Some(curr) => {
+                                                let pos = non_minimized.iter().position(|s| s == curr).unwrap_or(0);
+                                                (pos + 1) % non_minimized.len()
+                                            }
+                                            None => 0,
+                                        };
+                                        let target = &non_minimized[next_idx];
+                                        info!("[focus] focus next -> ventana {}", next_idx + 1);
+                                        state.set_keyboard_focus_surface(Some(target), serial);
+                                    }
+                                }
+                                KeyAction::FocusPrev => {
+                                    let non_minimized: Vec<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface> = state
+                                        .windows()
+                                        .iter()
+                                        .filter(|w| !w.minimized)
+                                        .map(|w| w.surface.wl_surface().clone())
+                                        .collect();
+
+                                    if !non_minimized.is_empty() {
+                                        let kb = state.seat.get_keyboard().unwrap();
+                                        let current_focus = kb.current_focus();
+                                        let prev_idx = match current_focus.as_ref() {
+                                            Some(curr) => {
+                                                let pos = non_minimized.iter().position(|s| s == curr).unwrap_or(0);
+                                                if pos == 0 {
+                                                    non_minimized.len() - 1
+                                                } else {
+                                                    pos - 1
+                                                }
+                                            }
+                                            None => non_minimized.len() - 1,
+                                        };
+                                        let target = &non_minimized[prev_idx];
+                                        info!("[focus] focus prev -> ventana {}", prev_idx + 1);
+                                        state.set_keyboard_focus_surface(Some(target), serial);
                                     }
                                 }
                                 KeyAction::MoveToWorkspace(dest) => {
@@ -378,21 +432,22 @@ impl Vinland {
         None
     }
 
-    // update_keyboard_focus -> le dice al keyboard handle qué superficie tiene foco
-    // y envía el estado State::Activated a la superficie xdg_toplevel para activar CSD y menús GTK
-    pub fn update_keyboard_focus(&mut self, pos: Point<f64, Logical>, serial: smithay::utils::Serial) {
+    // set_keyboard_focus_surface -> asigna el foco del teclado a una superficie especifica
+    // y actualiza el estado Activated en todas las ventanas del workspace
+    pub fn set_keyboard_focus_surface(
+        &mut self,
+        target_surface: Option<&WlSurface>,
+        serial: smithay::utils::Serial,
+    ) {
         let keyboard = self.seat.get_keyboard().unwrap();
         if keyboard.is_grabbed() {
             return;
         }
 
-        let target_surface = self.surface_under(pos).map(|(s, _)| s);
-
         for window in self.windows_mut() {
             let is_focused = target_surface
-                .as_ref()
                 .map(|s| {
-                    // 1. Es la superficie principal o subsuperficie de ella
+                    // 1. es la superficie principal o subsuperficie de ella
                     let mut found = false;
                     smithay::wayland::compositor::with_surface_tree_downward(
                         window.surface.wl_surface(),
@@ -409,7 +464,7 @@ impl Vinland {
                         return true;
                     }
 
-                    // 2. Es un popup de esta ventana (o subsuperficie de un popup)
+                    // 2. es un popup de esta ventana (o subsuperficie de un popup)
                     for (popup, _) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
                         let mut popup_found = false;
                         smithay::wayland::compositor::with_surface_tree_downward(
@@ -452,6 +507,12 @@ impl Vinland {
             }
         }
 
-        keyboard.set_focus(self, target_surface, serial);
+        keyboard.set_focus(self, target_surface.cloned(), serial);
+    }
+
+    // update_keyboard_focus -> busca la superficie bajo las coordenadas del mouse y le da foco
+    pub fn update_keyboard_focus(&mut self, pos: Point<f64, Logical>, serial: smithay::utils::Serial) {
+        let target_surface = self.surface_under(pos).map(|(s, _)| s);
+        self.set_keyboard_focus_surface(target_surface.as_ref(), serial);
     }
 }
