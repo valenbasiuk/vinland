@@ -12,6 +12,8 @@ use std::path::PathBuf;
 pub enum KeyAction {
     Workspace(usize),       // indice base 0 (workspace 1 -> 0)
     MoveToWorkspace(usize), // indice base 0
+    FocusNext,              // enfoca la siguiente ventana en el workspace activo
+    FocusPrev,              // enfoca la ventana anterior en el workspace activo
     Close,
     Exit,
     Exec(String),
@@ -186,6 +188,26 @@ impl Config {
             });
         }
 
+        // Super+J -> enfocar siguiente ventana
+        self.parsed_keybinds.push(ParsedKeybind {
+            logo: true,
+            shift: false,
+            ctrl: false,
+            alt: false,
+            sym: K::J,
+            action: KeyAction::FocusNext,
+        });
+
+        // Super+K -> enfocar ventana anterior
+        self.parsed_keybinds.push(ParsedKeybind {
+            logo: true,
+            shift: false,
+            ctrl: false,
+            alt: false,
+            sym: K::K,
+            action: KeyAction::FocusPrev,
+        });
+
         // Super+Shift+Q -> cerrar ventana activa
         self.parsed_keybinds.push(ParsedKeybind {
             logo: true,
@@ -306,6 +328,8 @@ dialog_height = 500
 "Super+Shift+9" = "move_to_workspace 9"
 
 "Super+Shift+q" = "close"
+"Super+j" = "focus next"
+"Super+k" = "focus prev"
 "Super+Return" = "exec alacritty"
 "#;
 
@@ -430,6 +454,16 @@ fn parse_action(s: &str) -> Option<KeyAction> {
         }
         "close" | "kill" => Some(KeyAction::Close),
         "exit" | "quit" => Some(KeyAction::Exit),
+        "focus_next" | "focusnext" => Some(KeyAction::FocusNext),
+        "focus_prev" | "focusprev" => Some(KeyAction::FocusPrev),
+        "focus" => {
+            let target = parts.get(1)?.to_lowercase();
+            match target.as_str() {
+                "next" => Some(KeyAction::FocusNext),
+                "prev" | "previous" => Some(KeyAction::FocusPrev),
+                _ => None,
+            }
+        }
         "exec" | "spawn" => {
             if parts.len() > 1 {
                 Some(KeyAction::Exec(parts[1..].join(" ")))
