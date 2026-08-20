@@ -32,6 +32,20 @@ impl XwmHandler for Vinland {
     fn map_window_request(&mut self, _xwm: XwmId, window: X11Surface) {
         info!("[X11] map_window_request recibido");
         window.set_mapped(true).unwrap();
+
+        // para ventanas normales x11 (no override_redirect), centrarlas en pantalla
+        // respetando los gaps del compositor en vez de dejarlas en coordenadas x11 arbitrarias
+        if !window.is_override_redirect() {
+            let gap = self.config.tiling.gap;
+            let out_size = self.backend.window_size();
+            let geo = window.geometry();
+            let x = ((out_size.w - geo.size.w) / 2).max(gap);
+            let y = ((out_size.h - geo.size.h) / 2).max(gap);
+            let _ = window.configure(Some(smithay::utils::Rectangle::new(
+                (x, y).into(),
+                geo.size,
+            )));
+        }
     }
 
     fn mapped_override_redirect_window(&mut self, _xwm: XwmId, _window: X11Surface) {
