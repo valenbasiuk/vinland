@@ -242,13 +242,21 @@ impl Vinland {
         &mut self.workspaces[self.active_workspace].windows
     }
 
-    // retile -> calcula y envía la nueva disposición tiling a todas las ventanas
-    // ignora diálogos o ventanas que tienen padre (transient/floating)
-    // también ignora ventanas normales temporales o auxiliares que no tienen buffer
+    // retile -> calcula y envia la nueva disposicion tiling a todas las ventanas
+    // ignora dialogos o ventanas que tienen padre (transient/floating)
+    // tambien ignora ventanas normales temporales o auxiliares que no tienen buffer
+    //
+    // layout master-stack:
+    //   gap | master | gap | stack_0 | gap
+    //   gap |        | gap | stack_1 | gap
+    //   ...                | stack_n | gap
+    //
+    // master_ratio controla que fraccion del ancho usable ocupa el master (0.0-1.0)
     pub fn retile(&mut self) {
         let gap = self.config.tiling.gap;
+        let ratio = self.config.tiling.master_ratio;
 
-        // contamos solo las ventanas sin padre que no estén minimizadas y que ya tengan un buffer o ya fueron tiladas (rect w > 0)
+        // contamos solo las ventanas sin padre que no esten minimizadas y que ya tengan buffer o ya fueron tiladas
         let tiled_count = self
             .windows()
             .iter()
@@ -277,60 +285,67 @@ impl Vinland {
         let w: i32 = out_size.w;
         let h: i32 = out_size.h;
 
+        // ancho usable = pantalla menos los bordes exteriores y el gap central
+        // | gap | master | gap | stack | gap |
+        // usable = w - 3*gap (si hay 2 columnas), o w - 2*gap (si hay 1 ventana)
         let mut tiled_idx = 0;
         let total_tiled = tiled_count;
 
         for win in self.windows_mut().iter_mut() {
-            // si está minimizada, no la tilamos
             if win.minimized {
                 continue;
             }
-
-            // si tiene padre, dejamos que flote en su rect actual
             if win.surface.parent().is_some() {
                 continue;
             }
-
-            // si no tiene rect aún y tampoco tiene buffer, no lo tilamos todavía
             let has_buffer =
                 with_renderer_surface_state(win.surface.wl_surface(), |renderer_state| {
                     renderer_state.buffer().is_some()
                 })
                 .unwrap_or(false);
-
             if win.rect.size.w == 0 && !has_buffer {
                 continue;
             }
 
             if total_tiled == 1 {
-                // única ventana: fullscreen con margen exterior
-                win.rect = Rectangle::new((gap, gap).into(), (w - gap * 2, h - gap * 2).into());
+                // unica ventana: fullscreen con margen exterior en todos los bordes
+                let win_w = w - gap * 2;
+                let win_h = h - gap * 2;
+                win.rect = Rectangle::new((gap, gap).into(), (win_w, win_h).into());
                 win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((w - gap * 2, h - gap * 2)));
+                    s.size = Some(Size::from((win_w, win_h)));
                 });
                 win.surface.send_configure();
             } else if tiled_idx == 0 {
-                // master: mitad izquierda con gaps
-                let master_w = w / 2 - gap - gap / 2;
-                win.rect = Rectangle::new((gap, gap).into(), (master_w, h - gap * 2).into());
+                // master: columna izquierda
+                // x = gap, ancho = (w - 3*gap) * ratio
+                let usable = w - gap * 3; // espacio entre bordes exteriores menos gap central
+                let master_w = (usable as f32 * ratio) as i32;
+                let win_h = h - gap * 2;
+                win.rect = Rectangle::new((gap, gap).into(), (master_w, win_h).into());
                 win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((master_w, h - gap * 2)));
+                    s.size = Some(Size::from((master_w, win_h)));
                 });
                 win.surface.send_configure();
                 tiled_idx += 1;
             } else {
-                // stack: mitad derecha dividida con gaps
-                let master_w = w / 2;
-                let stack_x = master_w + gap;
-                let stack_w = w - stack_x - gap;
-                let slot_h = h / (total_tiled as i32 - 1);
-                let stack_idx = tiled_idx - 1;
-                let y = slot_h * stack_idx + gap;
-                let slot_h_gapped = slot_h - gap * 2;
+                // stack: columna derecha, dividida verticalmente
+                let usable = w - gap * 3;
+                let master_w = (usable as f32 * ratio) as i32;
+                let stack_x = gap + master_w + gap; // borde izq + master + gap central
+                let stack_w = w - stack_x - gap;    // hasta el borde derecho con gap
+                let stack_count = total_tiled as i32 - 1;
+                let stack_idx = tiled_idx as i32 - 1;
 
-                win.rect = Rectangle::new((stack_x, y).into(), (stack_w, slot_h_gapped).into());
+                // dividir la altura disponible en slots iguales con gap entre cada uno
+                // altura usable = h - gap*(stack_count+1) (gap arriba, entre cada slot, abajo)
+                let usable_h = h - gap * (stack_count + 1);
+                let slot_h = usable_h / stack_count;
+                let y = gap + stack_idx * (slot_h + gap);
+
+                win.rect = Rectangle::new((stack_x, y).into(), (stack_w, slot_h).into());
                 win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((stack_w, slot_h_gapped)));
+                    s.size = Some(Size::from((stack_w, slot_h)));
                 });
                 win.surface.send_configure();
                 tiled_idx += 1;
