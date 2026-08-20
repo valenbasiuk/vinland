@@ -29,6 +29,8 @@
 - wallpaper (soporte para png, jpeg, webp con modos fill, fit, stretch, center, tile)
 - workspaces (escritorios virtuales 1..9 con cambio de workspace y mover ventanas)
 - keybinds configurables (seccion [keybinds] en config.toml y auto-creacion del archivo)
+- focus cycling (super+j/k para ciclar foco entre ventanas del workspace y auto-focus al cambiar de workspace)
+- tiling gap math y master_ratio (gaps simetricos en bordes y entre ventanas, uso real de config.master_ratio)
 
 // ==============================================================================
 // PENDIENTE (bugs / features incompletas)
