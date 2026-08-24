@@ -30,6 +30,47 @@ pub struct ParsedKeybind {
     pub action: KeyAction,
 }
 
+// windowrule -> regla declarativa que se aplica automaticamente a las ventanas
+// al abrirse segun su app_id o titulo. todos los campos son opcionales;
+// se aplica si app_id y/o title coinciden (None = no filtrar por ese campo).
+// la coincidencia de title y app_id es por prefijo (starts_with), case-insensitive.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct WindowRule {
+    /// app_id de la ventana (ej: "alacritty", "firefox", "org.gnome.Calculator")
+    pub app_id: Option<String>,
+    /// titulo de la ventana (ej: "Picture-in-Picture", "Open File")
+    pub title: Option<String>,
+    /// true = forzar flotante, false = forzar tiling
+    pub float: Option<bool>,
+    /// tamaño personalizado en pixeles logicos [ancho, alto]
+    pub size: Option<[i32; 2]>,
+    /// centrar la ventana en pantalla al abrirse
+    pub center: Option<bool>,
+    /// workspace destino (1-9), la ventana se abre directamente en ese escritorio
+    pub workspace: Option<usize>,
+}
+
+impl WindowRule {
+    // match_window -> devuelve true si esta regla aplica a la ventana con los datos dados
+    // la coincidencia es case-insensitive y por prefijo para mayor flexibilidad
+    pub fn matches(&self, app_id: Option<&str>, title: Option<&str>) -> bool {
+        let app_ok = match &self.app_id {
+            Some(rule_id) => app_id
+                .map(|id| id.to_lowercase().starts_with(&rule_id.to_lowercase()))
+                .unwrap_or(false),
+            None => true, // sin filtro de app_id -> aplica a todas
+        };
+        let title_ok = match &self.title {
+            Some(rule_title) => title
+                .map(|t| t.to_lowercase().contains(&rule_title.to_lowercase()))
+                .unwrap_or(false),
+            None => true, // sin filtro de titulo -> aplica a todas
+        };
+        app_ok && title_ok
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -38,6 +79,9 @@ pub struct Config {
     pub background: BackgroundConfig,
     pub floating: FloatingConfig,
     pub decoration: DecorationConfig,
+    // reglas de ventana: [[rules]] en el toml
+    #[serde(default)]
+    pub rules: Vec<WindowRule>,
     // tabla [keybinds] del toml: "Super+1" = "workspace 1"
     #[serde(default)]
     pub keybinds: HashMap<String, String>,
@@ -123,6 +167,7 @@ impl Default for Config {
             background: BackgroundConfig::default(),
             floating: FloatingConfig::default(),
             decoration: DecorationConfig::default(),
+            rules: Vec::new(),
             keybinds: HashMap::new(),
             parsed_keybinds: Vec::new(),
         }
@@ -364,6 +409,32 @@ inactive_border_color = [0.15, 0.15, 0.2, 1.0]
 "Super+j" = "focus next"
 "Super+k" = "focus prev"
 "Super+Return" = "exec alacritty"
+
+# reglas de ventana: se evaluan en orden al abrir cada ventana.
+# app_id: prefijo del app_id (case-insensitive)
+# title: subcadena del titulo (case-insensitive)
+# float: true/false - forzar flotante o tiling
+# size: [ancho, alto] en pixeles logicos (solo si float = true)
+# center: true - centrar en pantalla al abrir
+# workspace: 1-9 - abrir directamente en ese escritorio virtual
+#
+# ejemplo: hacer que pavucontrol siempre flote centrado con tamaño fijo
+# [[rules]]
+# app_id = "pavucontrol"
+# float = true
+# size = [700, 450]
+# center = true
+#
+# ejemplo: abrir firefox siempre en el workspace 2
+# [[rules]]
+# app_id = "firefox"
+# workspace = 2
+#
+# ejemplo: hacer flotar cualquier ventana con "Picture-in-Picture" en el titulo
+# [[rules]]
+# title = "Picture-in-Picture"
+# float = true
+# size = [640, 360]
 "#;
 
 // load() $XDG_CONFIG_HOME/vinland/config.toml
