@@ -34,11 +34,37 @@ impl XwmHandler for Vinland {
         window.set_mapped(true).unwrap();
 
         // para ventanas normales x11 (no override_redirect), centrarlas en pantalla
-        // respetando los gaps del compositor en vez de dejarlas en coordenadas x11 arbitrarias
+        // respetando los gaps del compositor y aplicando reglas de ventana si coinciden
         if !window.is_override_redirect() {
+            let class = window.class();
+            let instance = window.instance();
+            let title = window.title();
+            let app_id = if !class.is_empty() {
+                Some(class.as_str())
+            } else if !instance.is_empty() {
+                Some(instance.as_str())
+            } else {
+                None
+            };
+
+            let matched_rule = self
+                .config
+                .rules
+                .iter()
+                .find(|r| r.matches(app_id, Some(title.as_str())))
+                .cloned();
+
             let gap = self.config.tiling.gap;
             let out_size = self.backend.window_size();
-            let geo = window.geometry();
+            let mut geo = window.geometry();
+
+            if let Some(ref rule) = matched_rule {
+                if let Some(size) = rule.size {
+                    geo.size.w = size[0];
+                    geo.size.h = size[1];
+                }
+            }
+
             let x = ((out_size.w - geo.size.w) / 2).max(gap);
             let y = ((out_size.h - geo.size.h) / 2).max(gap);
             let _ = window.configure(Some(smithay::utils::Rectangle::new(
