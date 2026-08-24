@@ -508,6 +508,10 @@ impl Vinland {
         }
 
         keyboard.set_focus(self, target_surface.cloned(), serial);
+
+        // forzar un redraw para que el cambio de color del borde activo/inactivo
+        // se refleje en el siguiente frame sin esperar un evento de movimiento del cursor
+        self.backend.window().request_redraw();
     }
 
     // update_keyboard_focus -> busca la superficie bajo las coordenadas del mouse y le da foco
