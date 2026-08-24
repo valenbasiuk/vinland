@@ -28,6 +28,7 @@ pub struct Window {
     pub surface: ToplevelSurface,
     pub rect: Rectangle<i32, Logical>,
     pub minimized: bool,
+    pub floating: bool,
 }
 
 // workspace -> escritorio virtual, contiene sus propias ventanas
@@ -256,12 +257,13 @@ impl Vinland {
         let gap = self.config.tiling.gap;
         let ratio = self.config.tiling.master_ratio;
 
-        // contamos solo las ventanas sin padre que no esten minimizadas y que ya tengan buffer o ya fueron tiladas
+        // contamos solo las ventanas sin padre y no flotantes que no esten minimizadas y que ya tengan buffer o ya fueron tiladas
         let tiled_count = self
             .windows()
             .iter()
             .filter(|w| {
                 !w.minimized
+                    && !w.floating
                     && w.surface.parent().is_none()
                     && (w.rect.size.w > 0
                         || with_renderer_surface_state(w.surface.wl_surface(), |renderer_state| {
@@ -293,6 +295,9 @@ impl Vinland {
 
         for win in self.windows_mut().iter_mut() {
             if win.minimized {
+                continue;
+            }
+            if win.floating {
                 continue;
             }
             if win.surface.parent().is_some() {
