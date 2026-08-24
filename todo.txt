@@ -31,6 +31,9 @@
 - keybinds configurables (seccion [keybinds] en config.toml y auto-creacion del archivo)
 - focus cycling (super+j/k para ciclar foco entre ventanas del workspace y auto-focus al cambiar de workspace)
 - tiling gap math y master_ratio (gaps simetricos en bordes y entre ventanas, uso real de config.master_ratio)
+- bordes de ventana (decoraciones SSD con colores activo e inactivo configurables y refresco inmediato)
+- reglas de ventana ([[rules]] en config.toml para flotar, centrar, tamaño custom y workspace automatico)
+
 
 // ==============================================================================
 // PENDIENTE (bugs / features incompletas)
