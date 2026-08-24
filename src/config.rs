@@ -37,6 +37,7 @@ pub struct Config {
     pub keyboard: KeyboardConfig,
     pub background: BackgroundConfig,
     pub floating: FloatingConfig,
+    pub decoration: DecorationConfig,
     // tabla [keybinds] del toml: "Super+1" = "workspace 1"
     #[serde(default)]
     pub keybinds: HashMap<String, String>,
@@ -101,6 +102,18 @@ pub struct FloatingConfig {
     pub dialog_height: i32,
 }
 
+// configuracion de decoraciones de ventana (bordes SSD)
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct DecorationConfig {
+    /// grosor del borde en pixeles logicos (0 = sin borde)
+    pub border_width: i32,
+    /// color [R, G, B, A] del borde de la ventana con foco de teclado
+    pub active_border_color: [f32; 4],
+    /// color [R, G, B, A] del borde de las ventanas sin foco
+    pub inactive_border_color: [f32; 4],
+}
+
 // defaults = valores que antes estaban hardcodeados en el codigo
 impl Default for Config {
     fn default() -> Self {
@@ -109,6 +122,7 @@ impl Default for Config {
             keyboard: KeyboardConfig::default(),
             background: BackgroundConfig::default(),
             floating: FloatingConfig::default(),
+            decoration: DecorationConfig::default(),
             keybinds: HashMap::new(),
             parsed_keybinds: Vec::new(),
         }
@@ -146,6 +160,17 @@ impl Default for FloatingConfig {
         Self {
             dialog_width: 600,
             dialog_height: 500,
+        }
+    }
+}
+impl Default for DecorationConfig {
+    fn default() -> Self {
+        Self {
+            border_width: 2,
+            // azul cyan activo
+            active_border_color: [0.2, 0.6, 1.0, 1.0],
+            // gris oscuro inactivo
+            inactive_border_color: [0.15, 0.15, 0.2, 1.0],
         }
     }
 }
@@ -302,6 +327,14 @@ repeat_rate = 60
 [floating]
 dialog_width = 600
 dialog_height = 500
+
+[decoration]
+# grosor del borde en pixeles logicos (0 = sin borde)
+border_width = 2
+# color [R, G, B, A] del borde de la ventana con foco activo
+active_border_color = [0.2, 0.6, 1.0, 1.0]
+# color [R, G, B, A] del borde de las ventanas inactivas
+inactive_border_color = [0.15, 0.15, 0.2, 1.0]
 
 [keybinds]
 # formato: "MOD+TECLA" = "accion [argumentos]"
