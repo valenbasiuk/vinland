@@ -18,6 +18,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::Frame;
 use smithay::backend::renderer::Renderer;
 use smithay::backend::renderer::Texture;
+use smithay::backend::renderer::Color32F;
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::desktop::PopupManager;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
@@ -57,6 +58,12 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         .filter(|w| !w.minimized && w.rect.size.w > 0 && w.rect.size.h > 0)
         .map(|w| (w.surface.clone(), w.rect))
         .collect();
+
+    // obtener la superficie que tiene el foco de teclado para colorear el borde activo
+    let focused_surface_id: Option<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface> = state
+        .seat
+        .get_keyboard()
+        .and_then(|k| k.current_focus());
 
     let (renderer, mut framebuffer) = state.backend.bind().unwrap();
 
@@ -293,6 +300,56 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             &[],
         ) {
             info!("[wallpaper] error al dibujar textura: {:?}", e);
+        }
+    }
+
+    // bordes SSD: dibujar los 4 segmentos de borde de cada ventana visible
+    // se dibujan DESPUES del wallpaper y ANTES de las superficies de los clientes
+    // para que el borde quede por detras del contenido de la ventana (no encima)
+    let bw = state.config.decoration.border_width;
+    if bw > 0 {
+        let active_color = Color32F::from(state.config.decoration.active_border_color);
+        let inactive_color = Color32F::from(state.config.decoration.inactive_border_color);
+
+        for (surface, rect) in &window_snap {
+            // determinar si esta ventana tiene el foco de teclado
+            let is_active = focused_surface_id
+                .as_ref()
+                .map(|fs| fs == surface.wl_surface())
+                .unwrap_or(false);
+            let border_color = if is_active { active_color } else { inactive_color };
+
+            // convertir el rect logico a fisico para draw_solid (que trabaja en coordenadas fisicas)
+            let bw_phys = (bw as f64 * scale.x) as i32;
+            let x = (rect.loc.x as f64 * scale.x) as i32;
+            let y = (rect.loc.y as f64 * scale.y) as i32;
+            let w_phys = (rect.size.w as f64 * scale.x) as i32;
+            let h_phys = (rect.size.h as f64 * scale.y) as i32;
+
+            // borde superior: x-bw, y-bw, ancho+2*bw, alto=bw
+            let top = Rectangle::new(
+                (x - bw_phys, y - bw_phys).into(),
+                (w_phys + bw_phys * 2, bw_phys).into(),
+            );
+            // borde inferior: x-bw, y+h, ancho+2*bw, alto=bw
+            let bottom = Rectangle::new(
+                (x - bw_phys, y + h_phys).into(),
+                (w_phys + bw_phys * 2, bw_phys).into(),
+            );
+            // borde izquierdo: x-bw, y, ancho=bw, alto=h
+            let left = Rectangle::new(
+                (x - bw_phys, y).into(),
+                (bw_phys, h_phys).into(),
+            );
+            // borde derecho: x+w, y, ancho=bw, alto=h
+            let right = Rectangle::new(
+                (x + w_phys, y).into(),
+                (bw_phys, h_phys).into(),
+            );
+
+            for segment in [top, bottom, left, right] {
+                let _ = frame.draw_solid(segment, &[damage], border_color);
+            }
         }
     }
 
