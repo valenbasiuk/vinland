@@ -28,66 +28,129 @@ impl XdgShellHandler for Vinland {
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         info!("nueva ventana: {:?}", surface.wl_surface().id());
 
-        // si tiene padre -> ventana flotante / diálogo / menú desplegable hijo
-        if surface.parent().is_some() {
-            // No forzamos un tamaño fijo de 600x500; permitimos que el cliente especifique su propio tamaño
-            let rect = Rectangle::new((100, 100).into(), (0, 0).into());
-            self.windows_mut().push(Window {
-                surface: surface.clone(),
-                rect,
-                minimized: false,
-            });
+        // consultar app_id y title iniciales si el cliente ya los asignó
+        let (app_id, title) = smithay::wayland::compositor::with_states(surface.wl_surface(), |states| {
+            states
+                .data_map
+                .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+                .map(|data| {
+                    let guard = data.lock().unwrap();
+                    (guard.app_id.clone(), guard.title.clone())
+                })
+                .unwrap_or((None, None))
+        });
 
-            surface.send_configure();
+        // buscar si alguna regla en config coincide
+        let matched_rule = self
+            .config
+            .rules
+            .iter()
+            .find(|r| r.matches(app_id.as_deref(), title.as_deref()))
+            .cloned();
+
+        let mut is_floating = surface.parent().is_some();
+        let mut target_workspace = None;
+        let mut custom_rect = None;
+
+        if let Some(ref rule) = matched_rule {
+            if let Some(float_pref) = rule.float {
+                is_floating = float_pref;
+            }
+            if let Some(ws) = rule.workspace {
+                if ws >= 1 && ws <= self.workspaces.len() {
+                    target_workspace = Some(ws - 1);
+                }
+            }
+            if is_floating {
+                let w: i32 = rule
+                    .size
+                    .map(|s| s[0])
+                    .unwrap_or(self.config.floating.dialog_width);
+                let h: i32 = rule
+                    .size
+                    .map(|s| s[1])
+                    .unwrap_or(self.config.floating.dialog_height);
+
+                let out_size = self.backend.window_size();
+
+                let should_center = rule.center.unwrap_or(true);
+                let gap = self.config.tiling.gap;
+                let x: i32 = if should_center {
+                    ((out_size.w - w) / 2).max(gap)
+                } else {
+                    100
+                };
+                let y: i32 = if should_center {
+                    ((out_size.h - h) / 2).max(gap)
+                } else {
+                    100
+                };
+                custom_rect = Some(Rectangle::new((x, y).into(), (w, h).into()));
+            }
+        }
+
+        let rect = if let Some(r) = custom_rect {
+            r
+        } else if is_floating {
+            Rectangle::new((100, 100).into(), (0, 0).into())
         } else {
-            // ventana normal -> la agregamos con rect cero temporalmente
-            // se recalcula el tiling cuando haga su primer commit con buffer
-            self.windows_mut().push(Window {
-                surface: surface.clone(),
-                rect: Rectangle::new((0, 0).into(), (0, 0).into()),
-                minimized: false,
-            });
+            Rectangle::new((0, 0).into(), (0, 0).into())
+        };
+
+        let target_ws_idx = target_workspace.unwrap_or(self.active_workspace);
+
+        self.workspaces[target_ws_idx].windows.push(Window {
+            surface: surface.clone(),
+            rect,
+            minimized: false,
+            floating: is_floating,
+        });
+
+        if is_floating {
+            if let Some(r) = custom_rect {
+                surface.with_pending_state(|s| {
+                    s.size = Some(r.size);
+                });
+            }
+            surface.send_configure();
         }
 
         // Marcamos la ventana como Activated desde el principio.
         // GTK deshabilita las GActions (y botones vinculados a ellas, como el menú ≡)
         // si la ventana no está en estado Activated. Si no enviamos esto aquí,
         // la ventana nace inactiva y el primer click en ≡ siempre es ignorado por GTK.
-        // Nota: para ventanas normales no enviamos configure aquí (lo hace retile())
-        // pero sí para las que tienen padre.
         {
-            let win = self.windows_mut().last_mut().unwrap();
+            let win = self.workspaces[target_ws_idx].windows.last_mut().unwrap();
             win.surface.with_pending_state(|s| {
                 s.states.set(xdg_toplevel::State::Activated);
             });
-            // Para ventanas con padre se envía configure en new_toplevel (ya está arriba).
-            // Para ventanas normales, retile() enviará el configure más adelante con el
-            // tamaño correcto, y el estado Activated quedará incluido en ese configure.
         }
 
-        // foco de teclado a la ventana recien abierta
-        let serial = SERIAL_COUNTER.next_serial();
-        let wl_surface = self.windows().last().unwrap().surface.wl_surface().clone();
-        let keyboard = self.seat.get_keyboard().unwrap();
-        keyboard.set_focus(self, Some(wl_surface), serial);
+        // foco de teclado a la ventana recien abierta solo si esta en el workspace activo
+        if target_ws_idx == self.active_workspace {
+            let serial = SERIAL_COUNTER.next_serial();
+            let wl_surface = surface.wl_surface().clone();
+            let keyboard = self.seat.get_keyboard().unwrap();
+            keyboard.set_focus(self, Some(wl_surface), serial);
+        }
     }
 
     // llamado por xdg_foreign cuando se establece una relación padre-hijo
     // post-creación (ej: un file dialog que se abre desde otra app via portal)
     fn parent_changed(&mut self, surface: ToplevelSurface) {
         let out_size = self.backend.window_size();
-        let dialog_w = 600;
-        let dialog_h = 500;
+        let dialog_w = self.config.floating.dialog_width;
+        let dialog_h = self.config.floating.dialog_height;
         let x = (out_size.w - dialog_w) / 2;
         let y = (out_size.h - dialog_h) / 2;
 
-        // buscamos la ventana en nuestra lista (fue agregada con rect 0 por new_toplevel)
-        // y la reposicionamos como floating centrada ahora que sabemos que tiene padre
+        // buscamos la ventana en nuestra lista y la marcamos como floating
         if let Some(win) = self
             .windows_mut()
             .iter_mut()
             .find(|w| w.surface.wl_surface() == surface.wl_surface())
         {
+            win.floating = true;
             win.rect = Rectangle::new((x, y).into(), (dialog_w, dialog_h).into());
             surface.with_pending_state(|s| {
                 s.size = Some(Size::from((dialog_w, dialog_h)));
