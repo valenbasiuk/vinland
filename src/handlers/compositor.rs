@@ -57,19 +57,60 @@ impl CompositorHandler for Vinland {
             }
         }
 
-        // Si la superficie pertenece a una de nuestras ventanas normales (sin padre)
+        // si la superficie pertenece a una de nuestras ventanas normales (sin padre y no flotante)
         // y aún no ha sido configurada/tilada (su rect de tamaño es 0):
         let mut should_retile = false;
+
+        // re-evaluamos reglas para clientes que asignaron app_id/title despues de new_toplevel
+        let (app_id, title) = smithay::wayland::compositor::with_states(surface, |states| {
+            states
+                .data_map
+                .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+                .map(|data| {
+                    let guard = data.lock().unwrap();
+                    (guard.app_id.clone(), guard.title.clone())
+                })
+                .unwrap_or((None, None))
+        });
+
+        let matched_rule = self
+            .config
+            .rules
+            .iter()
+            .find(|r| r.matches(app_id.as_deref(), title.as_deref()))
+            .cloned();
+        let default_dialog_w = self.config.floating.dialog_width;
+        let default_dialog_h = self.config.floating.dialog_height;
+        let gap = self.config.tiling.gap;
+        let out_size = self.backend.window_size();
+
         for w in self.windows_mut() {
-            if w.surface.wl_surface() == surface
-                && w.surface.parent().is_none()
-                && w.rect.size.w == 0
-                && w.rect.size.h == 0
-            {
-                // Establecemos un tamaño temporal de (1, 1) para marcarla como "lista para tilar"
-                // y evitar que vuelva a dispararse en futuros commits
-                w.rect.size = (1, 1).into();
-                should_retile = true;
+            if w.surface.wl_surface() == surface && w.surface.parent().is_none() && w.rect.size.w == 0 && w.rect.size.h == 0 {
+                // si no estaba marcada como floating, verificar si las reglas ahora coinciden
+                if !w.floating {
+                    if let Some(ref rule) = matched_rule {
+                        if rule.float == Some(true) {
+                            w.floating = true;
+                            let width: i32 = rule.size.map(|s| s[0]).unwrap_or(default_dialog_w);
+                            let height: i32 = rule.size.map(|s| s[1]).unwrap_or(default_dialog_h);
+                            let x: i32 = ((out_size.w - width) / 2).max(gap);
+                            let y: i32 = ((out_size.h - height) / 2).max(gap);
+                            w.rect = smithay::utils::Rectangle::new((x, y).into(), (width, height).into());
+                            w.surface.with_pending_state(|s| {
+                                s.size = Some(smithay::utils::Size::from((width, height)));
+                            });
+                            w.surface.send_configure();
+                            break;
+                        }
+                    }
+                }
+
+                if !w.floating {
+                    // establecemos un tamaño temporal de (1, 1) para marcarla como "lista para tilar"
+                    // y evitar que vuelva a dispararse en futuros commits
+                    w.rect.size = (1, 1).into();
+                    should_retile = true;
+                }
                 break;
             }
         }
