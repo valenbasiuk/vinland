@@ -111,7 +111,7 @@ fn main() {
         .unwrap();
 
 
-    // fuente 3 -> winit
+    // fuente 4 -> winit
     loop_handle
         .insert_source(winit_evt_loop, move |event, _, state| {
             match event {
@@ -129,6 +129,59 @@ fn main() {
                     state.backend.window().request_redraw();
                 }
                 _ => {}
+            }
+        })
+        .unwrap();
+
+    // fuente 5 -> hot-reload de config.toml (watcher con notify y calloop::channel)
+    let (tx, rx) = calloop::channel::channel::<()>();
+    let config_path = config::config_path();
+    let config_dir = config_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    let _ = std::fs::create_dir_all(&config_dir);
+
+    use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+    let tx_watcher = tx.clone();
+    let _watcher: Option<RecommendedWatcher> = match RecommendedWatcher::new(
+        move |res: Result<Event, notify::Error>| {
+            if let Ok(event) = res {
+                if event.kind.is_modify() || event.kind.is_create() {
+                    let _ = tx_watcher.send(());
+                }
+            }
+        },
+        notify::Config::default(),
+    ) {
+        Ok(mut w) => {
+            if let Err(e) = w.watch(&config_dir, RecursiveMode::NonRecursive) {
+                tracing::warn!("[hot-reload] no se pudo monitorear {:?}: {}", config_dir, e);
+                None
+            } else {
+                info!("[hot-reload] monitoreando cambios en {:?}", config_dir);
+                Some(w)
+            }
+        }
+        Err(e) => {
+            tracing::warn!("[hot-reload] no se pudo inicializar watcher: {}", e);
+            None
+        }
+    };
+
+    loop_handle
+        .insert_source(rx, |event, _, state| {
+            if let calloop::channel::Event::Msg(()) = event {
+                info!("[hot-reload] cambio detectado en config.toml, recargando...");
+                match config::reload() {
+                    Ok(new_cfg) => {
+                        state.reload_config(new_cfg);
+                    }
+                    Err(e) => {
+                        tracing::warn!("[hot-reload] error al recargar config: {}", e);
+                    }
+                }
             }
         })
         .unwrap();
