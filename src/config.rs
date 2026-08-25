@@ -437,20 +437,24 @@ inactive_border_color = [0.15, 0.15, 0.2, 1.0]
 # size = [640, 360]
 "#;
 
-// load() $XDG_CONFIG_HOME/vinland/config.toml
+// config_path() -> ruta al archivo de configuracion
+// $XDG_CONFIG_HOME/vinland/config.toml o ~/.config/vinland/config.toml
+pub fn config_path() -> std::path::PathBuf {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(".config")
+        });
+    base.join("vinland").join("config.toml")
+}
+
+// load() carga la configuracion desde disco
 // si no existe lo crea con la plantilla por defecto; si falla el parseo, usa defaults
 pub fn load() -> Config {
-    let path = {
-        let base = std::env::var_os("XDG_CONFIG_HOME")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| {
-                std::env::var_os("HOME")
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|| std::path::PathBuf::from("."))
-                    .join(".config")
-            });
-        base.join("vinland").join("config.toml")
-    };
+    let path = config_path();
 
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
@@ -481,6 +485,19 @@ pub fn load() -> Config {
             Config::default()
         }
     }
+}
+
+// reload() recarga la configuracion desde disco
+// retorna Ok(nuevo_config) si la lectura y parseo fueron exitosos,
+// o Err con un mensaje descriptivo si algo fallo
+pub fn reload() -> Result<Config, String> {
+    let path = config_path();
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("no se pudo leer {:?}: {}", path, e))?;
+    let mut cfg: Config = toml::from_str(&text)
+        .map_err(|e| format!("error de parseo en config.toml: {}", e))?;
+    cfg.parse_keybinds_in_place();
+    Ok(cfg)
 }
 
 // parsea una combinacion de teclas como "Super+Shift+1" o "Ctrl+Alt+t"
