@@ -82,7 +82,19 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
 
     for (surface, rect) in &window_snap {
         // (el snapshot ya filtró minimizadas y con rect 0)
-        let pos = rect.loc.to_physical_precise_round(scale);
+        // el geo_loc es el offset dentro del buffer donde empieza el contenido visible real (excluyendo sombras CSD)
+        let geo_loc = smithay::wayland::compositor::with_states(surface.wl_surface(), |states| {
+            states
+                .cached_state
+                .get::<smithay::wayland::shell::xdg::SurfaceCachedState>()
+                .current()
+                .geometry
+        })
+        .unwrap_or_default()
+        .loc;
+
+        let window_loc = rect.loc - geo_loc;
+        let pos = window_loc.to_physical_precise_round(scale);
         let elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
             render_elements_from_surface_tree(
                 renderer,

@@ -406,15 +406,27 @@ impl Vinland {
                 }
             }
 
+            let geo_loc = smithay::wayland::compositor::with_states(window.surface.wl_surface(), |states| {
+                states
+                    .cached_state
+                    .get::<smithay::wayland::shell::xdg::SurfaceCachedState>()
+                    .current()
+                    .geometry
+            })
+            .unwrap_or_default()
+            .loc;
+
+            let window_loc = window.rect.loc - geo_loc;
+
             // La ventana misma
-            let local = pos - window.rect.loc.to_f64();
+            let local = pos - window_loc.to_f64();
             if let Some((subsurface, sub_offset)) = under_from_surface_tree(
                 window.surface.wl_surface(),
                 local,
                 (0, 0),
                 WindowSurfaceType::ALL,
             ) {
-                let global_pos = window.rect.loc.to_f64() + sub_offset.to_f64();
+                let global_pos = window_loc.to_f64() + sub_offset.to_f64();
                 return Some((subsurface, global_pos));
             }
         }
