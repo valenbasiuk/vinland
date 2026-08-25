@@ -243,6 +243,28 @@ impl Vinland {
         &mut self.workspaces[self.active_workspace].windows
     }
 
+    // reload_config -> aplica una nueva configuracion en caliente
+    // actualiza el config, recarga wallpaper si cambio, retila ventanas y redibuja
+    pub fn reload_config(&mut self, new_config: crate::config::Config) {
+        let wallpaper_changed = self.config.background.wallpaper != new_config.background.wallpaper
+            || self.config.background.wallpaper_mode != new_config.background.wallpaper_mode;
+
+        self.config = new_config;
+
+        // recargar wallpaper si la ruta o modo cambiaron
+        if wallpaper_changed {
+            let (renderer, _fb) = self.backend.bind().expect("bind para reload wallpaper");
+            self.wallpaper_texture = load_wallpaper(renderer, &self.config);
+        }
+
+        // retile con los nuevos gaps y master_ratio
+        self.retile();
+
+        // forzar redibujo inmediato para reflejar colores de bordes, wallpaper, etc.
+        self.backend.window().request_redraw();
+        tracing::info!("[hot-reload] configuracion recargada exitosamente");
+    }
+
     // retile -> calcula y envia la nueva disposicion tiling a todas las ventanas
     // ignora dialogos o ventanas que tienen padre (transient/floating)
     // tambien ignora ventanas normales temporales o auxiliares que no tienen buffer
