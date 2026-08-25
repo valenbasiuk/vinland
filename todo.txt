@@ -33,6 +33,7 @@
 - tiling gap math y master_ratio (gaps simetricos en bordes y entre ventanas, uso real de config.master_ratio)
 - bordes de ventana (decoraciones SSD con colores activo e inactivo configurables y refresco inmediato)
 - reglas de ventana ([[rules]] en config.toml para flotar, centrar, tamaño custom y workspace automatico)
+- hot-reload de configuracion (monitoreo en tiempo real de config.toml con notify y canal calloop)
 
 
 // ==============================================================================
