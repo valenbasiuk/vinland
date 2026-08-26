@@ -99,11 +99,13 @@ impl XdgShellHandler for Vinland {
 
         let target_ws_idx = target_workspace.unwrap_or(self.active_workspace);
 
+        let tile_order = self.workspaces[target_ws_idx].windows.len();
         self.workspaces[target_ws_idx].windows.push(Window {
             surface: surface.clone(),
             rect,
             minimized: false,
             floating: is_floating,
+            tile_order,
         });
 
         if is_floating {
