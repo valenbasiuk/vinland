@@ -519,6 +519,58 @@ impl Vinland {
             }
         }
 
+        // Reordenar en Z-stack: mover la ventana que contiene la superficie enfocada al final
+        // para que se renderice encima y quede al frente en la jerarquia visual
+        if let Some(target) = target_surface {
+            let active_ws = self.active_workspace;
+            let target_pos = self.workspaces[active_ws].windows.iter().position(|w| {
+                if w.surface.wl_surface() == target {
+                    return true;
+                }
+                let mut found = false;
+                smithay::wayland::compositor::with_surface_tree_downward(
+                    w.surface.wl_surface(),
+                    (),
+                    |_, _, _| smithay::wayland::compositor::TraversalAction::DoChildren(()),
+                    |child, _, _| {
+                        if child == target {
+                            found = true;
+                        }
+                    },
+                    |_, _, _| true,
+                );
+                if found {
+                    return true;
+                }
+                for (popup, _) in PopupManager::popups_for_surface(w.surface.wl_surface()) {
+                    let mut popup_found = false;
+                    smithay::wayland::compositor::with_surface_tree_downward(
+                        popup.wl_surface(),
+                        (),
+                        |_, _, _| smithay::wayland::compositor::TraversalAction::DoChildren(()),
+                        |child, _, _| {
+                            if child == target {
+                                popup_found = true;
+                            }
+                        },
+                        |_, _, _| true,
+                    );
+                    if popup_found {
+                        return true;
+                    }
+                }
+                false
+            });
+
+            if let Some(pos) = target_pos {
+                let last_idx = self.workspaces[active_ws].windows.len().saturating_sub(1);
+                if pos < last_idx {
+                    let win = self.workspaces[active_ws].windows.remove(pos);
+                    self.workspaces[active_ws].windows.push(win);
+                }
+            }
+        }
+
         keyboard.set_focus(self, target_surface.cloned(), serial);
 
         // forzar un redraw para que el cambio de color del borde activo/inactivo
