@@ -80,7 +80,7 @@ pub struct Config {
     pub floating: FloatingConfig,
     pub decoration: DecorationConfig,
     // reglas de ventana: [[rules]] en el toml
-    #[serde(default)]
+    #[serde(default = "default_rules")]
     pub rules: Vec<WindowRule>,
     // tabla [keybinds] del toml: "Super+1" = "workspace 1"
     #[serde(default)]
@@ -158,6 +158,27 @@ pub struct DecorationConfig {
     pub inactive_border_color: [f32; 4],
 }
 
+pub fn default_rules() -> Vec<WindowRule> {
+    vec![
+        WindowRule {
+            app_id: Some("gedit".into()),
+            title: None,
+            float: Some(true),
+            size: Some([960, 650]),
+            center: Some(true),
+            workspace: None,
+        },
+        WindowRule {
+            app_id: Some("org.gnome.gedit".into()),
+            title: None,
+            float: Some(true),
+            size: Some([960, 650]),
+            center: Some(true),
+            workspace: None,
+        },
+    ]
+}
+
 // defaults = valores que antes estaban hardcodeados en el codigo
 impl Default for Config {
     fn default() -> Self {
@@ -167,7 +188,7 @@ impl Default for Config {
             background: BackgroundConfig::default(),
             floating: FloatingConfig::default(),
             decoration: DecorationConfig::default(),
-            rules: Vec::new(),
+            rules: default_rules(),
             keybinds: HashMap::new(),
             parsed_keybinds: Vec::new(),
         }
