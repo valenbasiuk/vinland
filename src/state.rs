@@ -9,12 +9,15 @@ use smithay::backend::winit::WinitGraphicsBackend;
 use smithay::desktop::PopupManager;
 use smithay::input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatState};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale as OutputScale, Subpixel};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::wlr_layer::{Layer, LayerSurface, WlrLayerShellState};
-use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellState};
+use smithay::wayland::shell::xdg::{
+    decoration::XdgDecorationState, ToplevelSurface, XdgShellState,
+};
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 use smithay::wayland::xwayland_shell::XWaylandShellState;
@@ -73,6 +76,8 @@ pub struct Vinland {
     pub xdisplay: Option<u32>,
     pub xwayland_shell_state: XWaylandShellState,
     pub config: Config,
+    #[allow(dead_code)]
+    pub xdg_decoration_state: XdgDecorationState,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -202,6 +207,7 @@ impl Vinland {
 
         let xwayland_shell_state = XWaylandShellState::new::<Vinland>(&display_handle);
         let layer_shell_state = WlrLayerShellState::new::<Vinland>(&display_handle);
+        let xdg_decoration_state = XdgDecorationState::new::<Vinland>(&display_handle);
 
         let state = Vinland {
             display_handle,
@@ -229,6 +235,7 @@ impl Vinland {
             xdisplay: None,
             xwayland_shell_state,
             config,
+            xdg_decoration_state,
         };
 
         (state, winit_evt_loop)
@@ -341,6 +348,10 @@ impl Vinland {
                 win.rect = Rectangle::new((gap, gap).into(), (win_w, win_h).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((win_w, win_h)));
+                    s.states.set(xdg_toplevel::State::TiledTop);
+                    s.states.set(xdg_toplevel::State::TiledBottom);
+                    s.states.set(xdg_toplevel::State::TiledLeft);
+                    s.states.set(xdg_toplevel::State::TiledRight);
                 });
                 win.surface.send_configure();
             } else if tiled_idx == 0 {
@@ -352,6 +363,10 @@ impl Vinland {
                 win.rect = Rectangle::new((gap, gap).into(), (master_w, win_h).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((master_w, win_h)));
+                    s.states.set(xdg_toplevel::State::TiledTop);
+                    s.states.set(xdg_toplevel::State::TiledBottom);
+                    s.states.set(xdg_toplevel::State::TiledLeft);
+                    s.states.set(xdg_toplevel::State::TiledRight);
                 });
                 win.surface.send_configure();
                 tiled_idx += 1;
@@ -373,6 +388,10 @@ impl Vinland {
                 win.rect = Rectangle::new((stack_x, y).into(), (stack_w, slot_h).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((stack_w, slot_h)));
+                    s.states.set(xdg_toplevel::State::TiledTop);
+                    s.states.set(xdg_toplevel::State::TiledBottom);
+                    s.states.set(xdg_toplevel::State::TiledLeft);
+                    s.states.set(xdg_toplevel::State::TiledRight);
                 });
                 win.surface.send_configure();
                 tiled_idx += 1;

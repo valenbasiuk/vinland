@@ -83,15 +83,15 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     for (surface, rect) in &window_snap {
         // (el snapshot ya filtró minimizadas y con rect 0)
         // el geo_loc es el offset dentro del buffer donde empieza el contenido visible real (excluyendo sombras CSD)
-        let geo_loc = smithay::wayland::compositor::with_states(surface.wl_surface(), |states| {
+        let geo = smithay::wayland::compositor::with_states(surface.wl_surface(), |states| {
             states
                 .cached_state
                 .get::<smithay::wayland::shell::xdg::SurfaceCachedState>()
                 .current()
                 .geometry
         })
-        .unwrap_or_default()
-        .loc;
+        .unwrap_or_default();
+        let geo_loc = geo.loc;
 
         let window_loc = rect.loc - geo_loc;
         let pos = window_loc.to_physical_precise_round(scale);
@@ -358,6 +358,11 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
                 (x + w_phys, y).into(),
                 (bw_phys, h_phys).into(),
             );
+
+            // fondo solido bajo la ventana para que barras de estado translucidas o esquinas
+            // no dejen traslucir el wallpaper
+            let win_bg = Rectangle::new((x, y).into(), (w_phys, h_phys).into());
+            let _ = frame.draw_solid(win_bg, &[damage], Color32F::new(0.18, 0.18, 0.20, 1.0));
 
             for segment in [top, bottom, left, right] {
                 let _ = frame.draw_solid(segment, &[damage], border_color);
