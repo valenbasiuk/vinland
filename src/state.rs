@@ -31,6 +31,8 @@ pub struct Window {
     pub rect: Rectangle<i32, Logical>,
     pub minimized: bool,
     pub floating: bool,
+    pub tile_order: usize,
+    pub rules_evaluated: bool,
 }
 
 // workspace -> escritorio virtual, contiene sus propias ventanas
@@ -107,20 +109,20 @@ pub fn load_wallpaper(renderer: &mut GlesRenderer, config: &Config) -> Option<Gl
     };
 
     let (w, h) = img.dimensions();
-    let data: Vec<u8> = img.into_raw();
+    let raw = img.into_raw();
 
     match renderer.import_memory(
-        &data,
+        &raw,
         smithay::backend::allocator::Fourcc::Abgr8888,
-        smithay::utils::Size::from((w as i32, h as i32)),
-        false, // no flipped
+        (w as i32, h as i32).into(),
+        false,
     ) {
         Ok(tex) => {
             tracing::info!("[wallpaper] textura cargada {}×{}", w, h);
             Some(tex)
         }
         Err(e) => {
-            tracing::warn!("[wallpaper] error al subir textura: {:?}", e);
+            tracing::warn!("[wallpaper] error importando textura GL: {}", e);
             None
         }
     }
@@ -273,7 +275,6 @@ impl Vinland {
 
     // retile -> calcula y envia la nueva disposicion tiling a todas las ventanas
     // ignora dialogos o ventanas que tienen padre (transient/floating)
-    // tambien ignora ventanas normales temporales o auxiliares que no tienen buffer
     //
     // layout master-stack:
     //   gap | master | gap | stack_0 | gap
@@ -285,17 +286,6 @@ impl Vinland {
         let gap = self.config.tiling.gap;
         let ratio = self.config.tiling.master_ratio;
 
-        // contamos todas las ventanas no minimizadas, no flotantes y sin padre
-        let tiled_count = self
-            .windows()
-            .iter()
-            .filter(|w| !w.minimized && !w.floating && w.surface.parent().is_none())
-            .count();
-
-        if tiled_count == 0 {
-            return;
-        }
-
         let scale_factor = self.backend.scale_factor();
         let out_size = self
             .backend
@@ -306,17 +296,24 @@ impl Vinland {
         let w: i32 = out_size.w;
         let h: i32 = out_size.h;
 
-        // ancho usable = pantalla menos los bordes exteriores y el gap central
-        // | gap | master | gap | stack | gap |
-        // usable = w - 3*gap (si hay 2 columnas), o w - 2*gap (si hay 1 ventana)
-        let mut tiled_idx = 0;
-        let total_tiled = tiled_count;
+        // recopilar los indices de ventanas tilables ordenadas por su tile_order estable
+        let mut tiled_indices: Vec<usize> = self
+            .windows()
+            .iter()
+            .enumerate()
+            .filter(|(_, win)| !win.minimized && !win.floating && win.surface.parent().is_none())
+            .map(|(idx, _)| idx)
+            .collect();
 
-        for win in self.windows_mut().iter_mut() {
-            if win.minimized || win.floating || win.surface.parent().is_some() {
-                continue;
-            }
+        if tiled_indices.is_empty() {
+            return;
+        }
 
+        tiled_indices.sort_by_key(|&idx| self.windows()[idx].tile_order);
+        let total_tiled = tiled_indices.len();
+
+        for (tiled_idx, win_idx) in tiled_indices.into_iter().enumerate() {
+            let win = &mut self.windows_mut()[win_idx];
             if total_tiled == 1 {
                 // unica ventana: fullscreen con margen exterior en todos los bordes
                 let win_w = w - gap * 2;
@@ -332,8 +329,7 @@ impl Vinland {
                 win.surface.send_configure();
             } else if tiled_idx == 0 {
                 // master: columna izquierda
-                // x = gap, ancho = (w - 3*gap) * ratio
-                let usable = w - gap * 3; // espacio entre bordes exteriores menos gap central
+                let usable = w - gap * 3;
                 let master_w = (usable as f32 * ratio) as i32;
                 let win_h = h - gap * 2;
                 win.rect = Rectangle::new((gap, gap).into(), (master_w, win_h).into());
@@ -345,18 +341,15 @@ impl Vinland {
                     s.states.set(xdg_toplevel::State::TiledRight);
                 });
                 win.surface.send_configure();
-                tiled_idx += 1;
             } else {
                 // stack: columna derecha, dividida verticalmente
                 let usable = w - gap * 3;
                 let master_w = (usable as f32 * ratio) as i32;
-                let stack_x = gap + master_w + gap; // borde izq + master + gap central
-                let stack_w = w - stack_x - gap;    // hasta el borde derecho con gap
+                let stack_x = gap + master_w + gap;
+                let stack_w = w - stack_x - gap;
                 let stack_count = total_tiled as i32 - 1;
                 let stack_idx = tiled_idx as i32 - 1;
 
-                // dividir la altura disponible en slots iguales con gap entre cada uno
-                // altura usable = h - gap*(stack_count+1) (gap arriba, entre cada slot, abajo)
                 let usable_h = h - gap * (stack_count + 1);
                 let slot_h = usable_h / stack_count;
                 let y = gap + stack_idx * (slot_h + gap);
@@ -370,7 +363,6 @@ impl Vinland {
                     s.states.set(xdg_toplevel::State::TiledRight);
                 });
                 win.surface.send_configure();
-                tiled_idx += 1;
             }
         }
     }
