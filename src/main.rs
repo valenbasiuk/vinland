@@ -43,6 +43,7 @@ fn main() {
 
     // fuente 1 -> display wayland (mensajes entrantes de clientes)
     // generic wrappea el fd del display para que calloop lo monitoree
+    // unsafe permite acceder al display (que ahora es de calloop)
     loop_handle
         .insert_source(
             smithay::reexports::calloop::generic::Generic::new(
@@ -109,7 +110,6 @@ fn main() {
             }
         })
         .unwrap();
-
 
     // fuente 4 -> winit
     loop_handle
