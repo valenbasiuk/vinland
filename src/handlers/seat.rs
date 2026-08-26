@@ -11,7 +11,7 @@ use smithay::input::{
     keyboard::FilterResult,
 };
 use smithay::reexports::wayland_server::protocol::{wl_surface::WlSurface, wl_pointer};
-use smithay::utils::{Point, Logical, SERIAL_COUNTER};
+use smithay::utils::{IsAlive, Logical, Point, SERIAL_COUNTER};
 
 
 use crate::handlers::layer_shell::layer_surface_geometry;
@@ -62,9 +62,7 @@ impl Vinland {
             InputEvent::Keyboard { event } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let time   = Event::time_msec(&event);
-                let keyboard = self.seat.get_keyboard().unwrap();
-
-                // input() -> despacha el evento al cliente con foco actual.
+                let keyboard = self.seat.get_keyboard().unwrap();                // input() -> despacha el evento al cliente con foco actual.
                 // el closure recibe (mods, handle) y decide si interceptar (Intercept) o pasar (Forward).
                 keyboard.input(
                     self,
@@ -75,6 +73,8 @@ impl Vinland {
                     |state, mods, handle| {
                         use smithay::backend::input::KeyState;
                         use crate::config::KeyAction;
+
+                        state.super_pressed = mods.logo;
 
                         // solo actuamos en key press, no en release
                         if event.state() != KeyState::Pressed {
@@ -162,48 +162,62 @@ impl Vinland {
                                         state.set_keyboard_focus_surface(Some(target), serial);
                                     }
                                 }
-                                KeyAction::MoveToWorkspace(dest) => {
-                                    let dest = *dest;
-                                    if dest < state.workspaces.len() && dest != state.active_workspace {
-                                        // buscar la ventana con foco en el workspace activo
-                                        let kb = state.seat.get_keyboard().unwrap();
-                                        let focused_surface = kb.current_focus();
-
-                                        let focused_idx = focused_surface.as_ref().and_then(|fs| {
-                                            state.workspaces[state.active_workspace]
-                                                .windows
-                                                .iter()
-                                                .position(|w| w.surface.wl_surface() == fs)
-                                        });
-
-                                        if let Some(widx) = focused_idx {
-                                            let win = state.workspaces[state.active_workspace].windows.remove(widx);
-                                            info!("[workspace] mover ventana al workspace {}", dest + 1);
-                                            state.workspaces[dest].windows.push(win);
-                                            state.retile();
-                                            let kb = state.seat.get_keyboard().unwrap();
-                                            kb.set_focus(state, None, serial);
-                                        }
-                                    }
-                                }
                                 KeyAction::Close => {
                                     let kb = state.seat.get_keyboard().unwrap();
-                                    let focused_surface = kb.current_focus();
-                                    if let Some(fs) = focused_surface {
-                                        if let Some(win) = state.windows().iter().find(|w| w.surface.wl_surface() == &fs) {
-                                            info!("[window] enviando close request a la ventana activa");
+                                    if let Some(focused_surface) = kb.current_focus() {
+                                        if let Some(win) = state
+                                            .windows()
+                                            .iter()
+                                            .find(|w| w.surface.wl_surface() == &focused_surface)
+                                        {
+                                            info!("[close] cerrando ventana {:?}", win.surface.wl_surface().id());
                                             win.surface.send_close();
                                         }
                                     }
                                 }
+                                KeyAction::MoveToWorkspace(idx) => {
+                                    let idx = *idx;
+                                    if idx < state.workspaces.len() && idx != state.active_workspace {
+                                        let kb = state.seat.get_keyboard().unwrap();
+                                        let current_focus = kb.current_focus();
+
+                                        let win_idx = current_focus.as_ref().and_then(|focused| {
+                                            state
+                                                .windows()
+                                                .iter()
+                                                .position(|w| w.surface.wl_surface() == focused)
+                                        });
+
+                                        if let Some(pos) = win_idx {
+                                            info!("[workspace] mover ventana al workspace {}", idx + 1);
+                                            let win = state.workspaces[state.active_workspace].windows.remove(pos);
+                                            state.workspaces[idx].windows.push(win);
+                                            state.retile();
+
+                                            let next_surface = state
+                                                .windows()
+                                                .iter()
+                                                .find(|w| !w.minimized)
+                                                .map(|w| w.surface.wl_surface().clone());
+                                            state.set_keyboard_focus_surface(next_surface.as_ref(), serial);
+                                        }
+                                    }
+                                }
                                 KeyAction::Exit => {
-                                    info!("[vinland] cerrando compositor por atajo de teclado");
+                                    info!("[exit] saliendo de vinland...");
                                     state.loop_signal.stop();
                                 }
                                 KeyAction::Exec(cmd) => {
                                     info!("[exec] ejecutando comando: {}", cmd);
-                                    if let Err(e) = std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
-                                        tracing::warn!("[exec] fallo al ejecutar '{}': {}", cmd, e);
+                                    let parts: Vec<&str> = cmd.split_whitespace().collect();
+                                    if let Some((program, args)) = parts.split_first() {
+                                        let mut command = std::process::Command::new(program);
+                                        command.args(args);
+                                        command.env("WAYLAND_DISPLAY", "wayland-1");
+                                        command.env("DISPLAY", ":1");
+                                        if let Err(e) = command.spawn() {
+                                            tracing::warn!("[exec] error al ejecutar {:?}: {}", cmd, e);
+                                        }
                                     }
                                 }
                             }
@@ -232,6 +246,16 @@ impl Vinland {
                 ).into();
 
                 self.pointer_pos = pos;
+
+                // si estamos arrastrando una ventana flotante, actualizar su posición en pantalla
+                if let crate::state::DragState::FloatMove { ref source_surface, grab_offset } = self.drag_state {
+                    let source_surface = source_surface.clone();
+                    if let Some(win) = self.windows_mut().iter_mut().find(|w| w.surface.wl_surface() == &source_surface) {
+                        win.rect.loc = (pos - grab_offset).to_i32_round();
+                        self.backend.window().request_redraw();
+                    }
+                    return;
+                }
 
                 // focus-follows-pointer: actualizamos el foco de teclado y el estado Activated
                 // al mover el mouse, no solo al hacer click. Esto garantiza que cuando el cursor
@@ -271,10 +295,90 @@ impl Vinland {
                 info!("[CLICK] pos={:?} button={} state={:?} target={:?}",
                     self.pointer_pos, button, state, target.as_ref().map(|(s, _)| s.id()));
 
-                // al hacer click, actualizamos el foco del teclado SOLO si no hay un grab activo (ej: popup/menú)
-                let keyboard = self.seat.get_keyboard().unwrap();
-                if wl_pointer::ButtonState::Pressed == state && !keyboard.is_grabbed() {
-                    self.update_keyboard_focus(self.pointer_pos, serial);
+                if wl_pointer::ButtonState::Pressed == state {
+                    self.last_pointer_serial = Some(serial);
+
+                    // si super está presionado y es click izquierdo (272), iniciar drag interactivo
+                    if self.super_pressed && button == 272 {
+                        let active_ws = self.active_workspace;
+                        let found = self.workspaces[active_ws].windows.iter().rev().find(|w| {
+                            if w.minimized {
+                                return false;
+                            }
+                            if let Some((ref s, _)) = target {
+                                if w.surface.wl_surface() == s {
+                                    return true;
+                                }
+                                let mut in_tree = false;
+                                smithay::wayland::compositor::with_surface_tree_downward(
+                                    w.surface.wl_surface(),
+                                    (),
+                                    |_, _, _| smithay::wayland::compositor::TraversalAction::DoChildren(()),
+                                    |child, _, _| {
+                                        if child == s {
+                                            in_tree = true;
+                                        }
+                                    },
+                                    |_, _, _| true,
+                                );
+                                if in_tree {
+                                    return true;
+                                }
+                            }
+                            w.rect.to_f64().contains(self.pointer_pos)
+                        }).map(|w| (w.surface.wl_surface().clone(), w.floating, w.rect));
+
+                        if let Some((surf, floating, rect)) = found {
+                            self.set_keyboard_focus_surface(Some(&surf), serial);
+                            if floating {
+                                let grab_offset = self.pointer_pos - rect.loc.to_f64();
+                                self.drag_state = crate::state::DragState::FloatMove { source_surface: surf, grab_offset };
+                                info!("[drag] iniciado movimiento de ventana flotante con Super+Click");
+                            } else {
+                                self.drag_state = crate::state::DragState::TileSwap { source_surface: surf, start_pos: self.pointer_pos };
+                                info!("[drag] iniciado swap de ventana tileada con Super+Click");
+                            }
+                            return;
+                        }
+                    }
+
+                    // al hacer click normal, actualizamos el foco del teclado SOLO si no hay un grab activo (ej: popup/menú)
+                    let keyboard = self.seat.get_keyboard().unwrap();
+                    if !keyboard.is_grabbed() {
+                        self.update_keyboard_focus(self.pointer_pos, serial);
+                    }
+                } else if wl_pointer::ButtonState::Released == state && button == 272 {
+                    match &self.drag_state {
+                        crate::state::DragState::TileSwap { source_surface, .. } => {
+                            let source_surf = source_surface.clone();
+                            let active_ws = self.active_workspace;
+                            let target_surf = self.workspaces[active_ws].windows.iter().rev().find(|w| {
+                                !w.minimized && !w.floating && w.surface.wl_surface() != &source_surf && w.rect.to_f64().contains(self.pointer_pos)
+                            }).map(|w| w.surface.wl_surface().clone());
+
+                            if let Some(target_s) = target_surf {
+                                let src_pos = self.workspaces[active_ws].windows.iter().position(|w| w.surface.wl_surface() == &source_surf);
+                                let dst_pos = self.workspaces[active_ws].windows.iter().position(|w| w.surface.wl_surface() == &target_s);
+                                if let (Some(si), Some(di)) = (src_pos, dst_pos) {
+                                    let src_order = self.workspaces[active_ws].windows[si].tile_order;
+                                    let dst_order = self.workspaces[active_ws].windows[di].tile_order;
+                                    self.workspaces[active_ws].windows[si].tile_order = dst_order;
+                                    self.workspaces[active_ws].windows[di].tile_order = src_order;
+                                    self.retile();
+                                    self.backend.window().request_redraw();
+                                    info!("[tiling] swap completado con Super+Click entre ventanas");
+                                }
+                            }
+                            self.drag_state = crate::state::DragState::None;
+                            return;
+                        }
+                        crate::state::DragState::FloatMove { .. } => {
+                            self.drag_state = crate::state::DragState::None;
+                            info!("[drag] finalizado movimiento de ventana flotante");
+                            return;
+                        }
+                        crate::state::DragState::None => {}
+                    }
                 }
 
                 let pointer = self.seat.get_pointer().unwrap();
@@ -392,6 +496,9 @@ impl Vinland {
 
             // Popups de esta ventana
             for (popup, popup_location) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+                if !popup.alive() {
+                    continue;
+                }
                 let popup_geo_loc = popup.geometry().loc;
                 let global_popup_loc = window.rect.loc + popup_location - popup_geo_loc;
                 let local = pos - global_popup_loc.to_f64();
@@ -478,6 +585,9 @@ impl Vinland {
 
                     // 2. es un popup de esta ventana (o subsuperficie de un popup)
                     for (popup, _) in PopupManager::popups_for_surface(window.surface.wl_surface()) {
+                        if !popup.alive() {
+                            continue;
+                        }
                         let mut popup_found = false;
                         smithay::wayland::compositor::with_surface_tree_downward(
                             popup.wl_surface(),
@@ -543,6 +653,9 @@ impl Vinland {
                     return true;
                 }
                 for (popup, _) in PopupManager::popups_for_surface(w.surface.wl_surface()) {
+                    if !popup.alive() {
+                        continue;
+                    }
                     let mut popup_found = false;
                     smithay::wayland::compositor::with_surface_tree_downward(
                         popup.wl_surface(),

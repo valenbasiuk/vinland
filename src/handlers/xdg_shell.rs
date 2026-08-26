@@ -224,6 +224,28 @@ impl XdgShellHandler for Vinland {
         }
     }
 
+    // move_request: el cliente (ej: GTK/Qt en su barra de título CSD) solicita mover la ventana
+    fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, _serial: Serial) {
+        let _seat: Seat<Vinland> = Seat::from_resource(&seat).unwrap();
+        let target_surf = surface.wl_surface().clone();
+        if let Some(win) = self.windows().iter().find(|w| w.surface.wl_surface() == &target_surf) {
+            if win.floating {
+                let grab_offset = self.pointer_pos - win.rect.loc.to_f64();
+                self.drag_state = crate::state::DragState::FloatMove {
+                    source_surface: target_surf,
+                    grab_offset,
+                };
+                info!("[XDG] move_request aceptado para ventana flotante {:?}", surface.wl_surface().id());
+            } else {
+                self.drag_state = crate::state::DragState::TileSwap {
+                    source_surface: target_surf,
+                    start_pos: self.pointer_pos,
+                };
+                info!("[XDG] move_request aceptado para ventana tileada {:?}", surface.wl_surface().id());
+            }
+        }
+    }
+
     // grab: la app pide que el popup capture todo el input (menús desplegables)
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
         info!("[XDG] grab solicitado para popup {:?}, serial: {:?}", surface.wl_surface().id(), serial);
@@ -235,9 +257,11 @@ impl XdgShellHandler for Vinland {
             match ret {
                 Ok(mut grab) => {
                     info!("[XDG] grab_popup OK");
+                    let last_serial = self.last_pointer_serial.unwrap_or(serial);
                     if let Some(keyboard) = seat.get_keyboard() {
                         if keyboard.is_grabbed()
                             && !(keyboard.has_grab(serial)
+                                || keyboard.has_grab(last_serial)
                                 || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
                         {
                             info!("[XDG] keyboard ya estaba grabado y serial no coincide -> UNGRAB!");
@@ -250,6 +274,7 @@ impl XdgShellHandler for Vinland {
                     if let Some(pointer) = seat.get_pointer() {
                         if pointer.is_grabbed()
                             && !(pointer.has_grab(serial)
+                                || pointer.has_grab(last_serial)
                                 || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
                         {
                             info!("[XDG] pointer ya estaba grabado y serial no coincide -> UNGRAB!");
@@ -285,6 +310,9 @@ impl XdgShellHandler for Vinland {
 
 impl Vinland {
     pub fn unconstrain_popup(&self, popup: &PopupSurface) {
+        if !popup.alive() {
+            return;
+        }
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
             return;
         };

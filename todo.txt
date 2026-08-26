@@ -35,25 +35,19 @@
 - reglas de ventana ([[rules]] en config.toml para flotar, centrar, tamaño custom y workspace automatico)
 - hot-reload de configuracion (monitoreo en tiempo real de config.toml con notify y canal calloop)
 - z-order dinamico (stacking visual y auto-raise de ventanas al interactuar, permitiendo superposicion de ventanas flotantes y mosaico)
+- popup / menu support (soporte de xdg_popup con grabs, tolerancia de serial, dismiss y guardas alive)
+- gl cursor bug fix (render seguro de superficies de cursor vivas con hotspot)
+- tiling swap con super+click (intercambio interactivo de ventanas tileadas arrastrando con super)
+- drag de ventanas flotantes (movimiento libre con super+click o arrastrando la barra csd via move_request)
 
 
 // ==============================================================================
 // PENDIENTE (bugs / features incompletas)
 // ==============================================================================
 
-- popup / menu support (new_popup vacío, menús contextuales no funcionan)
-  * hay que manejar xdg_popup correctamente: position, grab, dismiss
-  * XdgShellHandler::grab() está vacío -> cuando una app pide grab de popup
-    el compositor debe pasarle el grab implícito del pointer al popup
-  * hay que renderizar los popups encima de la ventana padre
-
 - wl_data_device_manager seat fix
   * drag-and-drop no funciona correctamente todavía
   * copy-paste básico parece funcionar pero revisar edge cases
-
-- GL cursor bug: glTexSubImage2D error con cursor de tamaño inesperado
-  * se da cuando el cursor de la app tiene dimensiones raras
-  * revisar cómo se importa el buffer del cursor en render.rs
 
 - multi-output support (más de un monitor)
   * el compositor hoy solo maneja un Output hardcodeado ("vinland-output")
