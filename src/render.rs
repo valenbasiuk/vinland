@@ -108,6 +108,9 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
 
         // 1b. popups xdg de esta ventana (PopupManager)
         for (popup, popup_location) in PopupManager::popups_for_surface(surface.wl_surface()) {
+            if !popup.wl_surface().alive() {
+                continue;
+            }
             let popup_geo_loc = popup.geometry().loc;
             let popup_loc = rect.loc + popup_location - popup_geo_loc;
             let popup_pos = popup_loc.to_physical_precise_round(scale);
@@ -182,40 +185,38 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
 
     // si el cursor es una superficie (dibujada por la app), la agregamos a los elementos a dibujar
     if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
-        // with_states accede a los metadatos asociados a la superficie del cursor
-        let hotspot = smithay::wayland::compositor::with_states(surface, |states| {
-            states
-                .data_map
-                .get::<CursorImageSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .hotspot
-        });
+        if surface.alive() {
+            // with_states accede a los metadatos asociados a la superficie del cursor
+            let hotspot = smithay::wayland::compositor::with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<CursorImageSurfaceData>()
+                    .map(|d| d.lock().unwrap().hotspot)
+            })
+            .unwrap_or_default();
 
-        // resta en f64, aplica la escala y finalmente redondea a enteros
-        let cursor_pos = (state.pointer_pos - hotspot.to_f64())
-            .to_physical(scale)
-            .to_i32_round();
+            // resta en f64, aplica la escala y finalmente redondea a enteros
+            let cursor_pos = (state.pointer_pos - hotspot.to_f64())
+                .to_physical(scale)
+                .to_i32_round();
 
-        // let cursor_pos = cursor_pos + Point::from((100, 100)); // Cursor
-
-        // render_elements_from_surface_tree importa el buffer del cursor
-        // El cursor siempre va al FRENTE de todo (índice 0 = frente en orden front-to-back).
-        // render_elements_from_surface_tree devuelve elementos en front-to-back:
-        // el primer elemento es el más adelante (sobre todo lo demás).
-        // Por eso el cursor va primero en la Vec, y dibujamos la Vec en reverso (back-to-front).
-        let mut cursor_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
-            render_elements_from_surface_tree(
-                renderer,
-                surface,
-                cursor_pos,
-                scale,
-                1.0,
-                Kind::Cursor,
-            );
-        cursor_elems.append(&mut all_elements);
-        all_elements = cursor_elems;
+            // render_elements_from_surface_tree importa el buffer del cursor
+            // El cursor siempre va al FRENTE de todo (índice 0 = frente en orden front-to-back).
+            // render_elements_from_surface_tree devuelve elementos en front-to-back:
+            // el primer elemento es el más adelante (sobre todo lo demás).
+            // Por eso el cursor va primero en la Vec, y dibujamos la Vec en reverso (back-to-front).
+            let mut cursor_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
+                render_elements_from_surface_tree(
+                    renderer,
+                    surface,
+                    cursor_pos,
+                    scale,
+                    1.0,
+                    Kind::Cursor,
+                );
+            cursor_elems.append(&mut all_elements);
+            all_elements = cursor_elems;
+        }
     }
 
     // 3. renderizado de OpenGL
@@ -396,13 +397,15 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         // importante: sin esto, los popups nunca reciben la señal de "tu frame fue mostrado"
         // y el cliente queda esperando indefinidamente -> broken pipe / crash
         for (popup, _) in PopupManager::popups_for_surface(surface.wl_surface()) {
-            send_frames_surface_tree(
-                popup.wl_surface(),
-                &output,
-                start_time.elapsed(),
-                None,
-                |_, _| Some(output.clone()),
-            );
+            if popup.wl_surface().alive() {
+                send_frames_surface_tree(
+                    popup.wl_surface(),
+                    &output,
+                    start_time.elapsed(),
+                    None,
+                    |_, _| Some(output.clone()),
+                );
+            }
         }
     }
 
