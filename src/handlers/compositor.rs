@@ -85,12 +85,20 @@ impl CompositorHandler for Vinland {
         let out_size = self.backend.window_size();
 
         for w in self.windows_mut() {
-            if w.surface.wl_surface() == surface && w.surface.parent().is_none() && w.rect.size.w == 0 && w.rect.size.h == 0 {
+            if w.surface.wl_surface() == surface && w.surface.parent().is_none() && !w.rules_evaluated {
+                w.rules_evaluated = true;
                 // si no estaba marcada como floating, verificar si las reglas ahora coinciden
                 if !w.floating {
                     if let Some(ref rule) = matched_rule {
                         if rule.float == Some(true) {
                             w.floating = true;
+                            // desactivar estados tiled ya que ahora es flotante
+                            w.surface.with_pending_state(|s| {
+                                s.states.unset(smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State::TiledTop);
+                                s.states.unset(smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State::TiledBottom);
+                                s.states.unset(smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State::TiledLeft);
+                                s.states.unset(smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State::TiledRight);
+                            });
                             let width: i32 = rule.size.map(|s| s[0]).unwrap_or(default_dialog_w);
                             let height: i32 = rule.size.map(|s| s[1]).unwrap_or(default_dialog_h);
                             let x: i32 = ((out_size.w - width) / 2).max(gap);
@@ -100,16 +108,10 @@ impl CompositorHandler for Vinland {
                                 s.size = Some(smithay::utils::Size::from((width, height)));
                             });
                             w.surface.send_configure();
+                            should_retile = true;
                             break;
                         }
                     }
-                }
-
-                if !w.floating {
-                    // establecemos un tamaño temporal de (1, 1) para marcarla como "lista para tilar"
-                    // y evitar que vuelva a dispararse en futuros commits
-                    w.rect.size = (1, 1).into();
-                    should_retile = true;
                 }
                 break;
             }

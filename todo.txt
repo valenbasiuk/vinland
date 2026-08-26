@@ -34,6 +34,7 @@
 - bordes de ventana (decoraciones SSD con colores activo e inactivo configurables y refresco inmediato)
 - reglas de ventana ([[rules]] en config.toml para flotar, centrar, tamaño custom y workspace automatico)
 - hot-reload de configuracion (monitoreo en tiempo real de config.toml con notify y canal calloop)
+- z-order dinamico (stacking visual y auto-raise de ventanas al interactuar, permitiendo superposicion de ventanas flotantes y mosaico)
 
 
 // ==============================================================================
