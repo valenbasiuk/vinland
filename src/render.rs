@@ -359,11 +359,6 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
                 (bw_phys, h_phys).into(),
             );
 
-            // fondo solido bajo la ventana para que barras de estado translucidas o esquinas
-            // no dejen traslucir el wallpaper
-            let win_bg = Rectangle::new((x, y).into(), (w_phys, h_phys).into());
-            let _ = frame.draw_solid(win_bg, &[damage], Color32F::new(0.18, 0.18, 0.20, 1.0));
-
             for segment in [top, bottom, left, right] {
                 let _ = frame.draw_solid(segment, &[damage], border_color);
             }

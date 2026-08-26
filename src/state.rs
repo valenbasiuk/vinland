@@ -3,7 +3,6 @@
 
 use calloop::LoopSignal;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::backend::renderer::ImportMem;
 use smithay::backend::winit::WinitGraphicsBackend;
 use smithay::desktop::PopupManager;
@@ -286,20 +285,11 @@ impl Vinland {
         let gap = self.config.tiling.gap;
         let ratio = self.config.tiling.master_ratio;
 
-        // contamos solo las ventanas sin padre y no flotantes que no esten minimizadas y que ya tengan buffer o ya fueron tiladas
+        // contamos todas las ventanas no minimizadas, no flotantes y sin padre
         let tiled_count = self
             .windows()
             .iter()
-            .filter(|w| {
-                !w.minimized
-                    && !w.floating
-                    && w.surface.parent().is_none()
-                    && (w.rect.size.w > 0
-                        || with_renderer_surface_state(w.surface.wl_surface(), |renderer_state| {
-                            renderer_state.buffer().is_some()
-                        })
-                        .unwrap_or(false))
-            })
+            .filter(|w| !w.minimized && !w.floating && w.surface.parent().is_none())
             .count();
 
         if tiled_count == 0 {
@@ -323,21 +313,7 @@ impl Vinland {
         let total_tiled = tiled_count;
 
         for win in self.windows_mut().iter_mut() {
-            if win.minimized {
-                continue;
-            }
-            if win.floating {
-                continue;
-            }
-            if win.surface.parent().is_some() {
-                continue;
-            }
-            let has_buffer =
-                with_renderer_surface_state(win.surface.wl_surface(), |renderer_state| {
-                    renderer_state.buffer().is_some()
-                })
-                .unwrap_or(false);
-            if win.rect.size.w == 0 && !has_buffer {
+            if win.minimized || win.floating || win.surface.parent().is_some() {
                 continue;
             }
 

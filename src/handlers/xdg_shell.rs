@@ -107,23 +107,28 @@ impl XdgShellHandler for Vinland {
         });
 
         if is_floating {
-            if let Some(r) = custom_rect {
-                surface.with_pending_state(|s| {
+            let win = self.workspaces[target_ws_idx].windows.last_mut().unwrap();
+            win.surface.with_pending_state(|s| {
+                if let Some(r) = custom_rect {
                     s.size = Some(r.size);
-                });
-            }
-            surface.send_configure();
-        }
-
-        // Marcamos la ventana como Activated desde el principio.
-        // GTK deshabilita las GActions (y botones vinculados a ellas, como el menú ≡)
-        // si la ventana no está en estado Activated. Si no enviamos esto aquí,
-        // la ventana nace inactiva y el primer click en ≡ siempre es ignorado por GTK.
-        {
+                }
+                s.states.set(xdg_toplevel::State::Activated);
+            });
+            win.surface.send_configure();
+        } else {
             let win = self.workspaces[target_ws_idx].windows.last_mut().unwrap();
             win.surface.with_pending_state(|s| {
                 s.states.set(xdg_toplevel::State::Activated);
+                s.states.set(xdg_toplevel::State::TiledTop);
+                s.states.set(xdg_toplevel::State::TiledBottom);
+                s.states.set(xdg_toplevel::State::TiledLeft);
+                s.states.set(xdg_toplevel::State::TiledRight);
             });
+            if target_ws_idx == self.active_workspace {
+                self.retile();
+            } else {
+                win.surface.send_configure();
+            }
         }
 
         // foco de teclado a la ventana recien abierta solo si esta en el workspace activo
