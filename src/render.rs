@@ -80,7 +80,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let mut window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
     let mut popup_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 
-    for (surface, rect) in &window_snap {
+    for (surface, rect) in window_snap.iter().rev() {
         // (el snapshot ya filtró minimizadas y con rect 0)
         // el geo_loc es el offset dentro del buffer donde empieza el contenido visible real (excluyendo sombras CSD)
         let geo = smithay::wayland::compositor::with_states(surface.wl_surface(), |states| {
