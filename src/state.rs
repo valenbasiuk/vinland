@@ -9,8 +9,9 @@ use smithay::desktop::PopupManager;
 use smithay::input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatState};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale as OutputScale, Subpixel};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Serial, Size, Transform};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::wlr_layer::{Layer, LayerSurface, WlrLayerShellState};
@@ -23,6 +24,20 @@ use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::{X11Wm, XWayland};
 
 use crate::config::Config;
+
+// estado de arrastre interactivo (tiling swap o movimiento de ventana flotante)
+#[derive(Debug, Clone, PartialEq)]
+pub enum DragState {
+    None,
+    TileSwap {
+        source_surface: WlSurface,
+        start_pos: Point<f64, Logical>,
+    },
+    FloatMove {
+        source_surface: WlSurface,
+        grab_offset: Point<f64, Logical>,
+    },
+}
 
 // window -> representa una ventana y su posición/tamaño en pantalla (tiling layout)
 // tener surface y rect juntos = mejor cache locality que tenerlos en vecs separados
@@ -79,6 +94,9 @@ pub struct Vinland {
     pub config: Config,
     #[allow(dead_code)]
     pub xdg_decoration_state: XdgDecorationState,
+    pub super_pressed: bool,
+    pub last_pointer_serial: Option<Serial>,
+    pub drag_state: DragState,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -237,6 +255,9 @@ impl Vinland {
             xwayland_shell_state,
             config,
             xdg_decoration_state,
+            super_pressed: false,
+            last_pointer_serial: None,
+            drag_state: DragState::None,
         };
 
         (state, winit_evt_loop)
