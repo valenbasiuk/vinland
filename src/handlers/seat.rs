@@ -257,6 +257,100 @@ impl Vinland {
                     return;
                 }
 
+                // si estamos redimensionando una ventana flotante
+                if let crate::state::DragState::FloatResize {
+                    ref source_surface,
+                    initial_loc,
+                    initial_size,
+                    start_pos,
+                    edges,
+                } = self.drag_state
+                {
+                    let source_surface = source_surface.clone();
+                    let dx = (pos.x - start_pos.x) as i32;
+                    let dy = (pos.y - start_pos.y) as i32;
+
+                    use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
+
+                    let (new_x, new_y, new_w, new_h) = if let Some(edge) = edges {
+                        let mut nx = initial_loc.x;
+                        let mut ny = initial_loc.y;
+                        let mut nw = initial_size.w;
+                        let mut nh = initial_size.h;
+
+                        let (is_left, is_right, is_top, is_bottom) = match edge {
+                            ResizeEdge::Top => (false, false, true, false),
+                            ResizeEdge::Bottom => (false, false, false, true),
+                            ResizeEdge::Left => (true, false, false, false),
+                            ResizeEdge::Right => (false, true, false, false),
+                            ResizeEdge::TopLeft => (true, false, true, false),
+                            ResizeEdge::TopRight => (false, true, true, false),
+                            ResizeEdge::BottomLeft => (true, false, false, true),
+                            ResizeEdge::BottomRight => (false, true, false, true),
+                            _ => (false, false, false, false),
+                        };
+
+                        if is_left {
+                            nx += dx;
+                            nw -= dx;
+                        } else if is_right {
+                            nw += dx;
+                        }
+
+                        if is_top {
+                            ny += dy;
+                            nh -= dy;
+                        } else if is_bottom {
+                            nh += dy;
+                        }
+
+                        if nw < 100 {
+                            if is_left {
+                                nx -= 100 - nw;
+                            }
+                            nw = 100;
+                        }
+                        if nh < 100 {
+                            if is_top {
+                                ny -= 100 - nh;
+                            }
+                            nh = 100;
+                        }
+
+                        (nx, ny, nw, nh)
+                    } else {
+                        // resize libre desde la esquina inferior derecha con Super+RightClick
+                        let nw = (initial_size.w + dx).max(100);
+                        let nh = (initial_size.h + dy).max(100);
+                        (initial_loc.x, initial_loc.y, nw, nh)
+                    };
+
+                    if let Some(win) = self.windows_mut().iter_mut().find(|w| w.surface.wl_surface() == &source_surface) {
+                        win.rect = smithay::utils::Rectangle::new((new_x, new_y).into(), (new_w, new_h).into());
+                        win.surface.with_pending_state(|s| {
+                            s.size = Some(Size::from((new_w, new_h)));
+                        });
+                        win.surface.send_configure();
+                        self.backend.window().request_redraw();
+                    }
+                    return;
+                }
+
+                // si estamos ajustando el ratio del mosaico en tiempo real con Super+RightClick
+                if let crate::state::DragState::TileRatioResize { start_x, initial_ratio } = self.drag_state {
+                    let scale_factor = self.backend.scale_factor();
+                    let out_w = self.backend.window_size().to_f64().to_logical(scale_factor).w;
+                    let dx = pos.x - start_x;
+                    let delta_ratio = (dx / out_w) as f32;
+                    let new_ratio = (initial_ratio + delta_ratio).clamp(0.1, 0.9);
+                    if (self.config.tiling.master_ratio - new_ratio).abs() > 0.005 {
+                        self.config.tiling.master_ratio = new_ratio;
+                        self.retile();
+                        self.backend.window().request_redraw();
+                    }
+                    return;
+                }
+
                 // focus-follows-pointer: actualizamos el foco de teclado y el estado Activated
                 // al mover el mouse, no solo al hacer click. Esto garantiza que cuando el cursor
                 // entra a una ventana, la ventana ya está Activated ANTES de que llegue cualquier click.
@@ -298,7 +392,7 @@ impl Vinland {
                 if wl_pointer::ButtonState::Pressed == state {
                     self.last_pointer_serial = Some(serial);
 
-                    // si super está presionado y es click izquierdo (272), iniciar drag interactivo
+                    // si super está presionado y es click izquierdo (272), iniciar drag/move
                     if self.super_pressed && button == 272 {
                         let active_ws = self.active_workspace;
                         let found = self.workspaces[active_ws].windows.iter().rev().find(|w| {
@@ -342,12 +436,64 @@ impl Vinland {
                         }
                     }
 
+                    // si super está presionado y es click derecho (273), iniciar resize
+                    if self.super_pressed && button == 273 {
+                        let active_ws = self.active_workspace;
+                        let found = self.workspaces[active_ws].windows.iter().rev().find(|w| {
+                            if w.minimized {
+                                return false;
+                            }
+                            if let Some((ref s, _)) = target {
+                                if w.surface.wl_surface() == s {
+                                    return true;
+                                }
+                                let mut in_tree = false;
+                                smithay::wayland::compositor::with_surface_tree_downward(
+                                    w.surface.wl_surface(),
+                                    (),
+                                    |_, _, _| smithay::wayland::compositor::TraversalAction::DoChildren(()),
+                                    |child, _, _| {
+                                        if child == s {
+                                            in_tree = true;
+                                        }
+                                    },
+                                    |_, _, _| true,
+                                );
+                                if in_tree {
+                                    return true;
+                                }
+                            }
+                            w.rect.to_f64().contains(self.pointer_pos)
+                        }).map(|w| (w.surface.wl_surface().clone(), w.floating, w.rect));
+
+                        if let Some((surf, floating, rect)) = found {
+                            self.set_keyboard_focus_surface(Some(&surf), serial);
+                            if floating {
+                                self.drag_state = crate::state::DragState::FloatResize {
+                                    source_surface: surf,
+                                    initial_loc: rect.loc,
+                                    initial_size: rect.size,
+                                    start_pos: self.pointer_pos,
+                                    edges: None,
+                                };
+                                info!("[drag] iniciado resize de ventana flotante con Super+RightClick");
+                            } else {
+                                self.drag_state = crate::state::DragState::TileRatioResize {
+                                    start_x: self.pointer_pos.x,
+                                    initial_ratio: self.config.tiling.master_ratio,
+                                };
+                                info!("[drag] iniciado resize de master_ratio con Super+RightClick");
+                            }
+                            return;
+                        }
+                    }
+
                     // al hacer click normal, actualizamos el foco del teclado SOLO si no hay un grab activo (ej: popup/menú)
                     let keyboard = self.seat.get_keyboard().unwrap();
                     if !keyboard.is_grabbed() {
                         self.update_keyboard_focus(self.pointer_pos, serial);
                     }
-                } else if wl_pointer::ButtonState::Released == state && button == 272 {
+                } else if wl_pointer::ButtonState::Released == state && (button == 272 || button == 273) {
                     match &self.drag_state {
                         crate::state::DragState::TileSwap { source_surface, .. } => {
                             let source_surf = source_surface.clone();
@@ -375,6 +521,16 @@ impl Vinland {
                         crate::state::DragState::FloatMove { .. } => {
                             self.drag_state = crate::state::DragState::None;
                             info!("[drag] finalizado movimiento de ventana flotante");
+                            return;
+                        }
+                        crate::state::DragState::FloatResize { .. } => {
+                            self.drag_state = crate::state::DragState::None;
+                            info!("[drag] finalizado resize de ventana flotante");
+                            return;
+                        }
+                        crate::state::DragState::TileRatioResize { .. } => {
+                            self.drag_state = crate::state::DragState::None;
+                            info!("[drag] finalizado ajuste de master_ratio");
                             return;
                         }
                         crate::state::DragState::None => {}
