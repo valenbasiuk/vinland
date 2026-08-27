@@ -57,9 +57,12 @@ impl CompositorHandler for Vinland {
             }
         }
 
-        // si la superficie pertenece a una de nuestras ventanas normales (sin padre y no flotante)
-        // y aún no ha sido configurada/tilada (su rect de tamaño es 0):
         let mut should_retile = false;
+
+        // si una layer surface (como waybar) mando un commit, retilamos para aplicar su exclusive_zone
+        if self.layer_surfaces.iter().any(|item| item.surface.wl_surface() == surface) {
+            should_retile = true;
+        }
 
         // re-evaluamos reglas para clientes que asignaron app_id/title despues de new_toplevel
         let (app_id, title) = smithay::wayland::compositor::with_states(surface, |states| {
