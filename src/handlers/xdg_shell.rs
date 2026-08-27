@@ -246,6 +246,36 @@ impl XdgShellHandler for Vinland {
         }
     }
 
+    // resize_request: el cliente solicita redimensionar la ventana desde un borde específico
+    fn resize_request(
+        &mut self,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        _serial: Serial,
+        edges: xdg_toplevel::ResizeEdge,
+    ) {
+        let _seat: Seat<Vinland> = Seat::from_resource(&seat).unwrap();
+        let target_surf = surface.wl_surface().clone();
+        if let Some(win) = self.windows().iter().find(|w| w.surface.wl_surface() == &target_surf) {
+            if win.floating {
+                self.drag_state = crate::state::DragState::FloatResize {
+                    source_surface: target_surf,
+                    initial_loc: win.rect.loc,
+                    initial_size: win.rect.size,
+                    start_pos: self.pointer_pos,
+                    edges: Some(edges),
+                };
+                info!("[XDG] resize_request aceptado para ventana flotante {:?} bordes {:?}", surface.wl_surface().id(), edges);
+            } else {
+                self.drag_state = crate::state::DragState::TileRatioResize {
+                    start_x: self.pointer_pos.x,
+                    initial_ratio: self.config.tiling.master_ratio,
+                };
+                info!("[XDG] resize_request aceptado para ventana tileada {:?}", surface.wl_surface().id());
+            }
+        }
+    }
+
     // grab: la app pide que el popup capture todo el input (menús desplegables)
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
         info!("[XDG] grab solicitado para popup {:?}, serial: {:?}", surface.wl_surface().id(), serial);
