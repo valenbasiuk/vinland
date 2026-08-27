@@ -63,6 +63,8 @@ impl WlrLayerShellHandler for Vinland {
     fn layer_destroyed(&mut self, surface: LayerSurface) {
         info!("[LAYER] layer surface destruida");
         self.layer_surfaces.retain(|item| item.surface != surface);
+        self.retile();
+        self.backend.window().request_redraw();
     }
 }
 
