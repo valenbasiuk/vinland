@@ -17,6 +17,8 @@ pub enum KeyAction {
     Close,
     Exit,
     Exec(String),
+    Screenshot,             // captura de pantalla completa
+    ScreenshotWindow,       // captura de la ventana activa
 }
 
 // parsedkeybind -> un atajo de teclado ya resuelto con sus modificadores y accion
@@ -79,6 +81,7 @@ pub struct Config {
     pub background: BackgroundConfig,
     pub floating: FloatingConfig,
     pub decoration: DecorationConfig,
+    pub screenshot: ScreenshotConfig,
     // reglas de ventana: [[rules]] en el toml
     #[serde(default = "default_rules")]
     pub rules: Vec<WindowRule>,
@@ -158,6 +161,16 @@ pub struct DecorationConfig {
     pub inactive_border_color: [f32; 4],
 }
 
+// configuracion de capturas de pantalla
+#[derive(Debug, Deserialize, Clone)]
+#[serde(default)]
+pub struct ScreenshotConfig {
+    /// carpeta donde guardar las capturas (None = ~/Pictures/Screenshots)
+    pub directory: Option<PathBuf>,
+    /// destello blanco visual al tomar la captura
+    pub flash: bool,
+}
+
 pub fn default_rules() -> Vec<WindowRule> {
     vec![
         WindowRule {
@@ -188,9 +201,18 @@ impl Default for Config {
             background: BackgroundConfig::default(),
             floating: FloatingConfig::default(),
             decoration: DecorationConfig::default(),
+            screenshot: ScreenshotConfig::default(),
             rules: default_rules(),
             keybinds: HashMap::new(),
             parsed_keybinds: Vec::new(),
+        }
+    }
+}
+impl Default for ScreenshotConfig {
+    fn default() -> Self {
+        Self {
+            directory: None,
+            flash: true,
         }
     }
 }
@@ -328,6 +350,26 @@ impl Config {
             sym: K::Return,
             action: KeyAction::Exec("alacritty".to_string()),
         });
+
+        // Print -> capturar pantalla completa
+        self.parsed_keybinds.push(ParsedKeybind {
+            logo: false,
+            shift: false,
+            ctrl: false,
+            alt: false,
+            sym: K::Print,
+            action: KeyAction::Screenshot,
+        });
+
+        // Super+Print -> capturar ventana activa
+        self.parsed_keybinds.push(ParsedKeybind {
+            logo: true,
+            shift: false,
+            ctrl: false,
+            alt: false,
+            sym: K::Print,
+            action: KeyAction::ScreenshotWindow,
+        });
     }
 
     // parsea el hashmap crudo [keybinds] del toml y llena parsed_keybinds
@@ -402,10 +444,16 @@ active_border_color = [0.2, 0.6, 1.0, 1.0]
 # color [R, G, B, A] del borde de las ventanas inactivas
 inactive_border_color = [0.15, 0.15, 0.2, 1.0]
 
+[screenshot]
+# carpeta donde guardar capturas (si no se define, usa ~/Pictures/Screenshots)
+# directory = "~/Pictures/Screenshots"
+# destello blanco visual al tomar la captura
+flash = true
+
 [keybinds]
 # formato: "MOD+TECLA" = "accion [argumentos]"
 # modificadores: Super (o Mod4/Logo), Shift, Ctrl, Alt
-# acciones: workspace <1-9>, move_to_workspace <1-9>, close, exit, exec <cmd>
+# acciones: workspace <1-9>, move_to_workspace <1-9>, close, exit, exec <cmd>, screenshot, screenshot_window
 "Super+1" = "workspace 1"
 "Super+2" = "workspace 2"
 "Super+3" = "workspace 3"
@@ -430,6 +478,8 @@ inactive_border_color = [0.15, 0.15, 0.2, 1.0]
 "Super+j" = "focus next"
 "Super+k" = "focus prev"
 "Super+Return" = "exec alacritty"
+"Print" = "screenshot"
+"Super+Print" = "screenshot_window"
 
 # reglas de ventana: se evaluan en orden al abrir cada ventana.
 # app_id: prefijo del app_id (case-insensitive)
@@ -558,6 +608,7 @@ fn parse_key_combination(
         "space" => smithay::input::keyboard::Keysym::space,
         "backspace" => smithay::input::keyboard::Keysym::BackSpace,
         "tab" => smithay::input::keyboard::Keysym::Tab,
+        "print" | "printscreen" | "prtscn" => smithay::input::keyboard::Keysym::Print,
         _ => {
             // resolver por nombre xkb (insensible a mayusculas primero)
             let sym = xkb::keysym_from_name(key_str, xkb::KEYSYM_CASE_INSENSITIVE);
@@ -598,6 +649,8 @@ fn parse_action(s: &str) -> Option<KeyAction> {
         "exit" | "quit" => Some(KeyAction::Exit),
         "focus_next" | "focusnext" => Some(KeyAction::FocusNext),
         "focus_prev" | "focusprev" => Some(KeyAction::FocusPrev),
+        "screenshot" => Some(KeyAction::Screenshot),
+        "screenshot_window" | "screenshot-window" => Some(KeyAction::ScreenshotWindow),
         "focus" => {
             let target = parts.get(1)?.to_lowercase();
             match target.as_str() {
