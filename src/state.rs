@@ -25,6 +25,13 @@ use smithay::xwayland::{X11Wm, XWayland};
 
 use crate::config::Config;
 
+// objetivo de una captura de pantalla nativa
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScreenshotTarget {
+    FullScreen,
+    Window(Rectangle<i32, Logical>),
+}
+
 // estado de arrastre interactivo (tiling swap o movimiento de ventana flotante)
 #[derive(Debug, Clone, PartialEq)]
 pub enum DragState {
@@ -97,6 +104,7 @@ pub struct Vinland {
     pub super_pressed: bool,
     pub last_pointer_serial: Option<Serial>,
     pub drag_state: DragState,
+    pub pending_screenshot: Option<ScreenshotTarget>,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -258,6 +266,7 @@ impl Vinland {
             super_pressed: false,
             last_pointer_serial: None,
             drag_state: DragState::None,
+            pending_screenshot: None,
         };
 
         (state, winit_evt_loop)

@@ -10,11 +10,13 @@
 /// ===================================================================================================
 use std::time::Instant;
 
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::{Element, Kind, RenderElement};
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::ExportMem;
 use smithay::backend::renderer::Frame;
 use smithay::backend::renderer::Renderer;
 use smithay::backend::renderer::Texture;
@@ -27,7 +29,7 @@ use smithay::utils::{Rectangle, Scale, Transform};
 
 use crate::config::ScaleMode;
 use crate::handlers::layer_shell::layer_surface_geometry;
-use crate::state::Vinland;
+use crate::state::{ScreenshotTarget, Vinland};
 use smithay::utils::Size;
 use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::info;
@@ -378,6 +380,19 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     }
 
     let _ = frame.finish().unwrap();
+
+    // Captura de pantalla nativa (si fue solicitada por keybind o IPC)
+    if let Some(target) = state.pending_screenshot.take() {
+        capture_and_save_screenshot(
+            renderer,
+            &framebuffer,
+            size,
+            scale.x,
+            target,
+            &state.config.screenshot,
+        );
+    }
+
     drop(framebuffer);
     state.backend.submit(None).unwrap();
 
@@ -423,4 +438,105 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     }
 
     state.backend.window().request_redraw();
+}
+
+/// Helper para obtener el timestamp civil legible sin dependencias externas
+fn current_timestamp() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let sec = (now % 60) as u32;
+    let min = ((now / 60) % 60) as u32;
+    let hour = ((now / 3600) % 24) as u32;
+    let days = (now / 86400) as i64;
+
+    let z = days + 719468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = (z - era * 146097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{:04}-{:02}-{:02}_{:02}-{:02}-{:02}", y, m, d, hour, min, sec)
+}
+
+/// Determina la carpeta de screenshots respetando XDG_PICTURES_DIR o ~/Pictures/Screenshots
+fn screenshot_dir(config: &crate::config::ScreenshotConfig) -> std::path::PathBuf {
+    if let Some(ref dir) = config.directory {
+        return dir.clone();
+    }
+    let base = std::env::var_os("XDG_PICTURES_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|h| std::path::PathBuf::from(h).join("Pictures"))
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    base.join("Screenshots")
+}
+
+/// Extrae píxeles del framebuffer activo, los invierte verticalmente y guarda el PNG
+pub fn capture_and_save_screenshot(
+    renderer: &mut GlesRenderer,
+    framebuffer: &smithay::backend::renderer::gles::GlesTarget<'_>,
+    screen_size: Size<i32, smithay::utils::Physical>,
+    scale: f64,
+    target: ScreenshotTarget,
+    config: &crate::config::ScreenshotConfig,
+) {
+    let region = match target {
+        ScreenshotTarget::FullScreen => Rectangle::from_size(screen_size),
+        ScreenshotTarget::Window(logical_rect) => {
+            let px = (logical_rect.loc.x as f64 * scale).round() as i32;
+            let py = (logical_rect.loc.y as f64 * scale).round() as i32;
+            let pw = (logical_rect.size.w as f64 * scale).round() as i32;
+            let ph = (logical_rect.size.h as f64 * scale).round() as i32;
+
+            let x = px.clamp(0, screen_size.w);
+            let y = py.clamp(0, screen_size.h);
+            let w = pw.clamp(1, (screen_size.w - x).max(1));
+            let h = ph.clamp(1, (screen_size.h - y).max(1));
+            Rectangle::new((x, y).into(), (w, h).into())
+        }
+    };
+
+    let w = region.size.w as u32;
+    let h = region.size.h as u32;
+    if w == 0 || h == 0 {
+        tracing::warn!("[screenshot] región inválida: {}x{}", w, h);
+        return;
+    }
+
+    match renderer.copy_framebuffer(framebuffer, region, Fourcc::Abgr8888) {
+        Ok(mapping) => match renderer.map_texture(&mapping) {
+            Ok(slice) => {
+                if let Some(mut img) = image::RgbaImage::from_raw(w, h, slice.to_vec()) {
+                    // El readback de OpenGL tiene el origen en la esquina inferior izquierda
+                    image::imageops::flip_vertical_in_place(&mut img);
+
+                    let dir = screenshot_dir(config);
+                    if let Err(e) = std::fs::create_dir_all(&dir) {
+                        tracing::warn!("[screenshot] error creando carpeta {:?}: {}", dir, e);
+                        return;
+                    }
+
+                    let file_path = dir.join(format!("vinland_{}.png", current_timestamp()));
+                    match img.save(&file_path) {
+                        Ok(_) => tracing::info!("[screenshot] guardada con éxito en {:?}", file_path),
+                        Err(e) => tracing::warn!("[screenshot] error al guardar PNG: {}", e),
+                    }
+                } else {
+                    tracing::warn!("[screenshot] error creando RgbaImage de {}x{}", w, h);
+                }
+            }
+            Err(e) => tracing::warn!("[screenshot] error mapeando textura: {:?}", e),
+        },
+        Err(e) => tracing::warn!("[screenshot] error copiando framebuffer: {:?}", e),
+    }
 }
