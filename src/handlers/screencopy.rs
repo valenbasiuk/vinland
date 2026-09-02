@@ -84,6 +84,18 @@ impl Dispatch<ZwlrScreencopyManagerV1, (), Vinland> for Vinland {
                     size.h as u32,
                     (size.w * 4) as u32,
                 );
+                frame_res.buffer(
+                    wl_shm::Format::Xbgr8888,
+                    size.w as u32,
+                    size.h as u32,
+                    (size.w * 4) as u32,
+                );
+                frame_res.buffer(
+                    wl_shm::Format::Abgr8888,
+                    size.w as u32,
+                    size.h as u32,
+                    (size.w * 4) as u32,
+                );
                 frame_res.buffer_done();
             }
             zwlr_screencopy_manager_v1::Request::CaptureOutputRegion {
@@ -116,6 +128,18 @@ impl Dispatch<ZwlrScreencopyManagerV1, (), Vinland> for Vinland {
                 );
                 frame_res.buffer(
                     wl_shm::Format::Argb8888,
+                    rw as u32,
+                    rh as u32,
+                    (rw * 4) as u32,
+                );
+                frame_res.buffer(
+                    wl_shm::Format::Xbgr8888,
+                    rw as u32,
+                    rh as u32,
+                    (rw * 4) as u32,
+                );
+                frame_res.buffer(
+                    wl_shm::Format::Abgr8888,
                     rw as u32,
                     rh as u32,
                     (rw * 4) as u32,

@@ -409,6 +409,12 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         }
     }
 
+    // Procesar solicitudes externas de screencopy (zwlr_screencopy_manager_v1)
+    let pending_screencopy = std::mem::take(&mut state.screencopy_state.pending_frames);
+    for pending in pending_screencopy {
+        process_screencopy_frame(renderer, &framebuffer, pending);
+    }
+
     drop(framebuffer);
     state.backend.submit(None).unwrap();
 
@@ -554,5 +560,94 @@ pub fn capture_and_save_screenshot(
             Err(e) => tracing::warn!("[screenshot] error mapeando textura: {:?}", e),
         },
         Err(e) => tracing::warn!("[screenshot] error copiando framebuffer: {:?}", e),
+    }
+}
+
+/// Procesa una solicitud de screencopy de un cliente Wayland (ej: grim, slurp)
+/// copiando los píxeles del framebuffer activo directamente a su buffer shm.
+pub fn process_screencopy_frame(
+    renderer: &mut GlesRenderer,
+    framebuffer: &smithay::backend::renderer::gles::GlesTarget<'_>,
+    pending: crate::handlers::screencopy::PendingScreencopyFrame,
+) {
+    let w = pending.region.size.w as usize;
+    let h = pending.region.size.h as usize;
+    if w == 0 || h == 0 {
+        pending.frame.failed();
+        return;
+    }
+
+    match renderer.copy_framebuffer(framebuffer, pending.region, Fourcc::Abgr8888) {
+        Ok(mapping) => match renderer.map_texture(&mapping) {
+            Ok(src_slice) => {
+                let src_stride = w * 4;
+                let write_res = smithay::wayland::shm::with_buffer_contents_mut(
+                    &pending.buffer,
+                    |dest_slice, buffer_data| {
+                        let dest_stride = buffer_data.stride as usize;
+                        let is_bgr = buffer_data.format
+                            == smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888
+                            || buffer_data.format
+                                == smithay::reexports::wayland_server::protocol::wl_shm::Format::Xrgb8888;
+
+                        for y in 0..h {
+                            let src_y = h - 1 - y; // invertir verticalmente (OpenGL bottom-to-top)
+                            let src_row_start = src_y * src_stride;
+                            let dest_row_start = y * dest_stride;
+
+                            if is_bgr {
+                                for x in 0..w {
+                                    let s = src_row_start + x * 4;
+                                    let d = dest_row_start + x * 4;
+                                    if s + 3 < src_slice.len() && d + 3 < dest_slice.len() {
+                                        dest_slice[d] = src_slice[s + 2];     // B
+                                        dest_slice[d + 1] = src_slice[s + 1]; // G
+                                        dest_slice[d + 2] = src_slice[s];     // R
+                                        dest_slice[d + 3] = src_slice[s + 3]; // A
+                                    }
+                                }
+                            } else {
+                                let copy_len = src_stride.min(dest_stride);
+                                if src_row_start + copy_len <= src_slice.len()
+                                    && dest_row_start + copy_len <= dest_slice.len()
+                                {
+                                    dest_slice[dest_row_start..dest_row_start + copy_len]
+                                        .copy_from_slice(&src_slice[src_row_start..src_row_start + copy_len]);
+                                }
+                            }
+                        }
+                    },
+                );
+
+                if write_res.is_ok() {
+                    pending.frame.flags(
+                        smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_frame_v1::Flags::empty(),
+                    );
+                    let time = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    let secs = time.as_secs();
+                    let tv_sec_hi = (secs >> 32) as u32;
+                    let tv_sec_lo = (secs & 0xFFFF_FFFF) as u32;
+                    let tv_nsec = time.subsec_nanos();
+                    pending.frame.ready(tv_sec_hi, tv_sec_lo, tv_nsec);
+                    tracing::info!("[screencopy] frame entregado con éxito al cliente ({}x{})", w, h);
+                } else {
+                    tracing::warn!(
+                        "[screencopy] fallo al escribir en buffer shm: {:?}",
+                        write_res.err()
+                    );
+                    pending.frame.failed();
+                }
+            }
+            Err(e) => {
+                tracing::warn!("[screencopy] error mapeando textura GL: {:?}", e);
+                pending.frame.failed();
+            }
+        },
+        Err(e) => {
+            tracing::warn!("[screencopy] error copiando framebuffer: {:?}", e);
+            pending.frame.failed();
+        }
     }
 }
