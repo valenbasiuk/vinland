@@ -39,6 +39,9 @@
 - gl cursor bug fix (render seguro de superficies de cursor vivas con hotspot)
 - tiling swap con super+click (intercambio interactivo de ventanas tileadas arrastrando con super)
 - drag de ventanas flotantes (movimiento libre con super+click o arrastrando la barra csd via move_request)
+- screenshots nativas (atajo print para pantalla completa, super+print para ventana activa, guardado en ~/pictures/screenshots con timestamp, flash blanco visual)
+- zwlr_screencopy_manager_v1 (soporte para grim, slurp, obs y herramientas wayland con exportacion de framebuffer a shm)
+
 
 
 // ==============================================================================
@@ -292,9 +295,10 @@
 - protocolo ext-workspace-v1 para que paneles lo consulten
 
 [SCREENSHOT / SCREENCAST]
-- zwlr_screencopy_manager_v1
-  * permite a grim, slurp, obs capturar el framebuffer
-  * smithay tiene screencopy support (feature "wayland_frontend")
+- zwlr_screencopy_manager_v1 (COMPLETADO)
+  * permite a grim, slurp, obs capturar el framebuffer via buffers shm
+  * keybinds nativos: Print (pantalla completa), Super+Print (ventana enfocada)
+  * guardado automático en ~/Pictures/Screenshots con timestamp y flash blanco visual
 - xdg-desktop-portal screencast
   * para Firefox/Chrome compartir pantalla por WebRTC
 
