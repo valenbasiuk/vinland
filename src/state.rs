@@ -105,6 +105,7 @@ pub struct Vinland {
     pub last_pointer_serial: Option<Serial>,
     pub drag_state: DragState,
     pub pending_screenshot: Option<ScreenshotTarget>,
+    pub screenshot_flash_frames: u8,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -267,6 +268,7 @@ impl Vinland {
             last_pointer_serial: None,
             drag_state: DragState::None,
             pending_screenshot: None,
+            screenshot_flash_frames: 0,
         };
 
         (state, winit_evt_loop)

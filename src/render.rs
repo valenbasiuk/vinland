@@ -379,6 +379,18 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         }
     }
 
+    // Destello blanco visual (flash feedback) tras tomar captura
+    if state.screenshot_flash_frames > 0 {
+        let alpha = match state.screenshot_flash_frames {
+            2 => 0.35,
+            _ => 0.18,
+        };
+        let flash_color = Color32F::new(1.0, 1.0, 1.0, alpha);
+        let _ = frame.draw_solid(damage, &[damage], flash_color);
+        state.screenshot_flash_frames -= 1;
+        state.backend.window().request_redraw();
+    }
+
     let _ = frame.finish().unwrap();
 
     // Captura de pantalla nativa (si fue solicitada por keybind o IPC)
@@ -391,6 +403,10 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             target,
             &state.config.screenshot,
         );
+        if state.config.screenshot.flash {
+            state.screenshot_flash_frames = 2;
+            state.backend.window().request_redraw();
+        }
     }
 
     drop(framebuffer);
