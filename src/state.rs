@@ -22,8 +22,10 @@ use smithay::wayland::shm::ShmState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::{X11Wm, XWayland};
+use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
 use crate::config::Config;
+use crate::handlers::screencopy::ScreencopyState;
 
 // objetivo de una captura de pantalla nativa
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -106,6 +108,7 @@ pub struct Vinland {
     pub drag_state: DragState,
     pub pending_screenshot: Option<ScreenshotTarget>,
     pub screenshot_flash_frames: u8,
+    pub screencopy_state: ScreencopyState,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -237,6 +240,9 @@ impl Vinland {
         let layer_shell_state = WlrLayerShellState::new::<Vinland>(&display_handle);
         let xdg_decoration_state = XdgDecorationState::new::<Vinland>(&display_handle);
 
+        // screencopy: permite a utilidades como grim/slurp capturar pantalla
+        display_handle.create_global::<Vinland, ZwlrScreencopyManagerV1, ()>(3, ());
+
         let state = Vinland {
             display_handle,
             compositor_state,
@@ -269,6 +275,7 @@ impl Vinland {
             drag_state: DragState::None,
             pending_screenshot: None,
             screenshot_flash_frames: 0,
+            screencopy_state: ScreencopyState::default(),
         };
 
         (state, winit_evt_loop)
