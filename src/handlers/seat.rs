@@ -207,6 +207,31 @@ impl Vinland {
                                     info!("[exit] saliendo de vinland...");
                                     state.loop_signal.stop();
                                 }
+                                KeyAction::Screenshot => {
+                                    info!("[screenshot] solicitud de captura de pantalla completa");
+                                    state.pending_screenshot = Some(crate::state::ScreenshotTarget::FullScreen);
+                                    state.backend.window().request_redraw();
+                                }
+                                KeyAction::ScreenshotWindow => {
+                                    let kb = state.seat.get_keyboard().unwrap();
+                                    let current_focus = kb.current_focus();
+                                    let window_rect = current_focus.as_ref().and_then(|focused| {
+                                        state
+                                            .windows()
+                                            .iter()
+                                            .find(|w| w.surface.wl_surface() == focused)
+                                            .map(|w| w.rect)
+                                    });
+
+                                    if let Some(rect) = window_rect {
+                                        info!("[screenshot] solicitud de captura de ventana: {:?}", rect);
+                                        state.pending_screenshot = Some(crate::state::ScreenshotTarget::Window(rect));
+                                    } else {
+                                        info!("[screenshot] no hay ventana enfocada, capturando pantalla completa");
+                                        state.pending_screenshot = Some(crate::state::ScreenshotTarget::FullScreen);
+                                    }
+                                    state.backend.window().request_redraw();
+                                }
                                 KeyAction::Exec(cmd) => {
                                     info!("[exec] ejecutando comando: {}", cmd);
                                     let parts: Vec<&str> = cmd.split_whitespace().collect();
