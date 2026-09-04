@@ -12,6 +12,7 @@ use std::time::Instant;
 use tracing::info;
 
 mod config;
+mod cursor;
 mod handlers;
 mod render;
 mod state;

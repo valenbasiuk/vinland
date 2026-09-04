@@ -30,6 +30,7 @@ use smithay::utils::{Rectangle, Scale, Transform};
 use crate::config::ScaleMode;
 use crate::handlers::layer_shell::layer_surface_geometry;
 use crate::state::{ScreenshotTarget, Vinland};
+use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as DecoMode;
 use smithay::utils::Size;
 use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::info;
@@ -54,11 +55,33 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     // nota: bind() toma borrow mutable de state.backend, por lo tanto no podemos
     // llamar state.windows() después (ambos borran &state). recolectamos los datos
     // que necesitamos de las ventanas antes del bind, como snapshots simples.
-    let window_snap: Vec<(smithay::wayland::shell::xdg::ToplevelSurface, smithay::utils::Rectangle<i32, smithay::utils::Logical>)> = state
+    // snap de ventanas visibles: (surface, rect, decoration_mode)
+    // incluimos el decoration_mode para que el render loop sepa si debe dibujar
+    // bordes/titlebar SSD o saltearlos (la app tiene CSD propio).
+    let window_snap: Vec<(
+        smithay::wayland::shell::xdg::ToplevelSurface,
+        smithay::utils::Rectangle<i32, smithay::utils::Logical>,
+        DecoMode,
+    )> = state
         .windows()
         .iter()
         .filter(|w| !w.minimized && w.rect.size.w > 0 && w.rect.size.h > 0)
-        .map(|w| (w.surface.clone(), w.rect))
+        .map(|w| {
+            // leer el decoration_mode negociado con la app (si lo hay)
+            let deco_mode = smithay::wayland::compositor::with_states(
+                w.surface.wl_surface(),
+                |states| {
+                    states
+                        .cached_state
+                        .get::<smithay::wayland::shell::xdg::SurfaceCachedState>()
+                        .current()
+                        .decoration_mode
+                },
+            )
+            .flatten()
+            .unwrap_or(DecoMode::ServerSide);
+            (w.surface.clone(), w.rect, deco_mode)
+        })
         .collect();
 
     // obtener la superficie que tiene el foco de teclado para colorear el borde activo
@@ -82,7 +105,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let mut window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
     let mut popup_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 
-    for (surface, rect) in window_snap.iter().rev() {
+    for (surface, rect, _deco) in window_snap.iter().rev() {
         // (el snapshot ya filtró minimizadas y con rect 0)
         // el geo_loc es el offset dentro del buffer donde empieza el contenido visible real (excluyendo sombras CSD)
         let geo = smithay::wayland::compositor::with_states(surface.wl_surface(), |states| {
@@ -326,7 +349,12 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         let active_color = Color32F::from(state.config.decoration.active_border_color);
         let inactive_color = Color32F::from(state.config.decoration.inactive_border_color);
 
-        for (surface, rect) in &window_snap {
+        for (surface, rect, deco_mode) in &window_snap {
+            // saltar ventanas con decoracion client-side:
+            // la app dibuja sus propias sombras/bordes, no queremos doble borde
+            if *deco_mode == DecoMode::ClientSide {
+                continue;
+            }
             // determinar si esta ventana tiene el foco de teclado
             let is_active = focused_surface_id
                 .as_ref()
@@ -365,6 +393,38 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             for segment in [top, bottom, left, right] {
                 let _ = frame.draw_solid(segment, &[damage], border_color);
             }
+        }
+    }
+
+    // titlebar SSD: quad de color por encima del area de contenido de la ventana
+    // se dibuja solo si titlebar_height > 0 y la ventana es SSD
+    let th = state.config.decoration.titlebar_height;
+    if th > 0 {
+        let tb_active = Color32F::from(state.config.decoration.titlebar_color_active);
+        let tb_inactive = Color32F::from(state.config.decoration.titlebar_color_inactive);
+        let bw = state.config.decoration.border_width;
+
+        for (surface, rect, deco_mode) in &window_snap {
+            if *deco_mode == DecoMode::ClientSide {
+                continue;
+            }
+            let is_active = focused_surface_id
+                .as_ref()
+                .map(|fs| fs == surface.wl_surface())
+                .unwrap_or(false);
+            let tb_color = if is_active { tb_active } else { tb_inactive };
+
+            // el titlebar ocupa el espacio entre el borde superior y el inicio del contenido
+            // x = rect.loc.x - bw (incluir el borde lateral en el ancho del titlebar)
+            let bw_phys = (bw as f64 * scale.x) as i32;
+            let th_phys = (th as f64 * scale.y) as i32;
+            let x = (rect.loc.x as f64 * scale.x) as i32 - bw_phys;
+            // y del titlebar: justo encima del rect de contenido
+            let y = (rect.loc.y as f64 * scale.y) as i32 - th_phys;
+            let w_phys = (rect.size.w as f64 * scale.x) as i32 + bw_phys * 2;
+
+            let titlebar_rect = Rectangle::new((x, y).into(), (w_phys, th_phys).into());
+            let _ = frame.draw_solid(titlebar_rect, &[damage], tb_color);
         }
     }
 
@@ -421,7 +481,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     // send_frames_surface_tree -> avisa a cada cliente que su frame fue mostrado
     let output = state.output.clone();
     // usamos el snapshot que ya teníamos (evita conflicto de borrow con renderer activo)
-    for (surface, _rect) in &window_snap {
+    for (surface, _rect, _deco) in &window_snap {
         // frame callback al toplevel
         send_frames_surface_tree(
             surface.wl_surface(),

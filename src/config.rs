@@ -82,6 +82,7 @@ pub struct Config {
     pub floating: FloatingConfig,
     pub decoration: DecorationConfig,
     pub screenshot: ScreenshotConfig,
+    pub cursor: CursorConfig,
     // reglas de ventana: [[rules]] en el toml
     #[serde(default = "default_rules")]
     pub rules: Vec<WindowRule>,
@@ -149,16 +150,37 @@ pub struct FloatingConfig {
     pub dialog_height: i32,
 }
 
-// configuracion de decoraciones de ventana (bordes SSD)
+/// modo de decoracion de ventanas
+/// ServerSide = el compositor dibuja bordes/titlebar para todas las apps
+/// ClientSide = las apps dibujan sus propias decoraciones (CSD)
+/// Auto = respetar la preferencia de cada app; ServerSide como fallback
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DecorationMode {
+    #[default]
+    ServerSide,
+    ClientSide,
+    Auto,
+}
+
+// configuracion de decoraciones de ventana (bordes SSD + titlebar opcional)
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct DecorationConfig {
+    /// ServerSide | ClientSide | Auto
+    pub mode: DecorationMode,
     /// grosor del borde en pixeles logicos (0 = sin borde)
     pub border_width: i32,
     /// color [R, G, B, A] del borde de la ventana con foco de teclado
     pub active_border_color: [f32; 4],
     /// color [R, G, B, A] del borde de las ventanas sin foco
     pub inactive_border_color: [f32; 4],
+    /// alto del titlebar en pixeles logicos (0 = sin titlebar)
+    pub titlebar_height: i32,
+    /// color de fondo del titlebar cuando la ventana tiene foco
+    pub titlebar_color_active: [f32; 4],
+    /// color de fondo del titlebar cuando la ventana no tiene foco
+    pub titlebar_color_inactive: [f32; 4],
 }
 
 // configuracion de capturas de pantalla
@@ -202,6 +224,7 @@ impl Default for Config {
             floating: FloatingConfig::default(),
             decoration: DecorationConfig::default(),
             screenshot: ScreenshotConfig::default(),
+            cursor: CursorConfig::default(),
             rules: default_rules(),
             keybinds: HashMap::new(),
             parsed_keybinds: Vec::new(),
@@ -254,12 +277,43 @@ impl Default for FloatingConfig {
 impl Default for DecorationConfig {
     fn default() -> Self {
         Self {
+            mode: DecorationMode::ServerSide,
             border_width: 2,
             // azul cyan activo
             active_border_color: [0.2, 0.6, 1.0, 1.0],
             // gris oscuro inactivo
             inactive_border_color: [0.15, 0.15, 0.2, 1.0],
+            // sin titlebar por defecto (solo borde)
+            titlebar_height: 0,
+            titlebar_color_active: [0.15, 0.35, 0.6, 1.0],
+            titlebar_color_inactive: [0.1, 0.1, 0.15, 1.0],
         }
+    }
+}
+
+// configuracion del cursor del sistema (xcursor theme)
+// theme: nombre del tema (ej: "Adwaita", "breeze", "default")
+// size: tamaño en pixeles (ej: 24, 32, 48)
+// el compositor busca el tema en $XCURSOR_PATH y /usr/share/icons/<theme>/cursors/
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct CursorConfig {
+    /// nombre del tema xcursor (ej: "Adwaita", "default", "breeze")
+    pub theme: String,
+    /// tamaño del cursor en pixeles
+    pub size: u32,
+}
+
+impl Default for CursorConfig {
+    fn default() -> Self {
+        // respetar XCURSOR_THEME/XCURSOR_SIZE si están seteados en el entorno
+        let theme = std::env::var("XCURSOR_THEME")
+            .unwrap_or_else(|_| "default".to_string());
+        let size = std::env::var("XCURSOR_SIZE")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(24);
+        Self { theme, size }
     }
 }
 

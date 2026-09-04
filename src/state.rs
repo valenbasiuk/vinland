@@ -25,6 +25,7 @@ use smithay::xwayland::{X11Wm, XWayland};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
 use crate::config::Config;
+use crate::cursor::{load_cursor, LoadedCursor};
 use crate::handlers::screencopy::ScreencopyState;
 
 // objetivo de una captura de pantalla nativa
@@ -109,6 +110,13 @@ pub struct Vinland {
     pub pending_screenshot: Option<ScreenshotTarget>,
     pub screenshot_flash_frames: u8,
     pub screencopy_state: ScreencopyState,
+    // cursor theme xcursor: frames cargados como texturas GL
+    // None = usar el cursor del host (Winit)
+    pub cursor_theme: Option<LoadedCursor>,
+    // indice del frame actual del cursor (para animaciones)
+    pub cursor_frame_idx: usize,
+    // momento en que se cambió al frame actual (para avanzar segun delay_ms)
+    pub cursor_frame_time: std::time::Instant,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -276,9 +284,31 @@ impl Vinland {
             pending_screenshot: None,
             screenshot_flash_frames: 0,
             screencopy_state: ScreencopyState::default(),
+            // el cursor theme se carga después de crear el estado,
+            // porque necesita acceso al renderer (que requiere bind())
+            cursor_theme: None,
+            cursor_frame_idx: 0,
+            cursor_frame_time: std::time::Instant::now(),
         };
 
         (state, winit_evt_loop)
+    }
+
+    /// Carga el cursor theme desde config y lo sube como texturas GL.
+    /// Debe llamarse después de Vinland::new(), cuando el backend está listo para bind().
+    pub fn load_cursor_theme(&mut self) {
+        let theme = self.config.cursor.theme.clone();
+        let size = self.config.cursor.size;
+        let (renderer, _fb) = match self.backend.bind() {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("[cursor] no se pudo bind para cargar el tema: {}", e);
+                return;
+            }
+        };
+        self.cursor_theme = load_cursor(renderer, &theme, size, "left_ptr");
+        self.cursor_frame_idx = 0;
+        self.cursor_frame_time = std::time::Instant::now();
     }
 
     // helpers para acceder a las ventanas del workspace activo
@@ -295,6 +325,8 @@ impl Vinland {
     pub fn reload_config(&mut self, new_config: crate::config::Config) {
         let wallpaper_changed = self.config.background.wallpaper != new_config.background.wallpaper
             || self.config.background.wallpaper_mode != new_config.background.wallpaper_mode;
+        let cursor_changed = self.config.cursor.theme != new_config.cursor.theme
+            || self.config.cursor.size != new_config.cursor.size;
 
         self.config = new_config;
 
@@ -302,6 +334,11 @@ impl Vinland {
         if wallpaper_changed {
             let (renderer, _fb) = self.backend.bind().expect("bind para reload wallpaper");
             self.wallpaper_texture = load_wallpaper(renderer, &self.config);
+        }
+
+        // recargar cursor theme si el tema o tamaño cambiaron
+        if cursor_changed {
+            self.load_cursor_theme();
         }
 
         // retile con los nuevos gaps y master_ratio
@@ -324,6 +361,8 @@ impl Vinland {
     pub fn retile(&mut self) {
         let gap = self.config.tiling.gap;
         let ratio = self.config.tiling.master_ratio;
+        // descontar el titlebar del alto disponible (el quad SSD toma ese espacio)
+        let th = self.config.decoration.titlebar_height;
 
         let scale_factor = self.backend.scale_factor();
         let out_size = self
@@ -333,7 +372,8 @@ impl Vinland {
             .to_logical(scale_factor)
             .to_i32_round();
         let w: i32 = out_size.w;
-        let h: i32 = out_size.h;
+        // h disponible = alto total menos el espacio que ocupa el titlebar SSD
+        let h: i32 = out_size.h - th;
 
         // recopilar los indices de ventanas tilables ordenadas por su tile_order estable
         let mut tiled_indices: Vec<usize> = self
@@ -351,13 +391,16 @@ impl Vinland {
         tiled_indices.sort_by_key(|&idx| self.windows()[idx].tile_order);
         let total_tiled = tiled_indices.len();
 
+        // offset_y: las ventanas tileadas empiezan debajo del titlebar (si existe)
+        let offset_y = th;
+
         for (tiled_idx, win_idx) in tiled_indices.into_iter().enumerate() {
             let win = &mut self.windows_mut()[win_idx];
             if total_tiled == 1 {
                 // unica ventana: fullscreen con margen exterior en todos los bordes
                 let win_w = w - gap * 2;
                 let win_h = h - gap * 2;
-                win.rect = Rectangle::new((gap, gap).into(), (win_w, win_h).into());
+                win.rect = Rectangle::new((gap, gap + offset_y).into(), (win_w, win_h).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((win_w, win_h)));
                     s.states.set(xdg_toplevel::State::TiledTop);
@@ -371,7 +414,7 @@ impl Vinland {
                 let usable = w - gap * 3;
                 let master_w = (usable as f32 * ratio) as i32;
                 let win_h = h - gap * 2;
-                win.rect = Rectangle::new((gap, gap).into(), (master_w, win_h).into());
+                win.rect = Rectangle::new((gap, gap + offset_y).into(), (master_w, win_h).into());
                 win.surface.with_pending_state(|s| {
                     s.size = Some(Size::from((master_w, win_h)));
                     s.states.set(xdg_toplevel::State::TiledTop);
@@ -391,7 +434,7 @@ impl Vinland {
 
                 let usable_h = h - gap * (stack_count + 1);
                 let slot_h = usable_h / stack_count;
-                let y = gap + stack_idx * (slot_h + gap);
+                let y = gap + offset_y + stack_idx * (slot_h + gap);
 
                 win.rect = Rectangle::new((stack_x, y).into(), (stack_w, slot_h).into());
                 win.surface.with_pending_state(|s| {
