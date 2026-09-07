@@ -244,6 +244,30 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         }
     }
 
+    // si hay un icono de drag-and-drop activo, dibujarlo en la posición del puntero
+    let mut dnd_icon_reset = false;
+    if let Some(ref dnd_surface) = state.dnd_icon {
+        if dnd_surface.alive() {
+            let dnd_pos = state.pointer_pos.to_physical(scale).to_i32_round();
+            let mut dnd_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
+                render_elements_from_surface_tree(
+                    renderer,
+                    dnd_surface,
+                    dnd_pos,
+                    scale,
+                    1.0,
+                    Kind::Cursor,
+                );
+            dnd_elems.append(&mut all_elements);
+            all_elements = dnd_elems;
+        } else {
+            dnd_icon_reset = true;
+        }
+    }
+    if dnd_icon_reset {
+        state.dnd_icon = None;
+    }
+
     // 3. renderizado de OpenGL
     let mut frame = renderer
         .render(&mut framebuffer, size, Transform::Flipped180)
@@ -511,6 +535,19 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         if item.surface.alive() {
             send_frames_surface_tree(
                 item.surface.wl_surface(),
+                &output,
+                start_time.elapsed(),
+                None,
+                |_, _| Some(output.clone()),
+            );
+        }
+    }
+
+    // frame callback al icono de drag-and-drop si está activo
+    if let Some(ref dnd_surface) = state.dnd_icon {
+        if dnd_surface.alive() {
+            send_frames_surface_tree(
+                dnd_surface,
                 &output,
                 start_time.elapsed(),
                 None,

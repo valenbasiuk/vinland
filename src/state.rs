@@ -89,6 +89,7 @@ pub struct Vinland {
     pub popups: PopupManager, // gestor de popups de Smithay (maneja jerarquía, posicionamiento y grabs)
     pub pointer_pos: Point<f64, Logical>,
     pub data_device_state: DataDeviceState,
+    pub dnd_icon: Option<WlSurface>,
     pub cursor_status: CursorImageStatus,
     pub xdg_foreign_state: XdgForeignState,
     pub layer_shell_state: WlrLayerShellState,
@@ -271,6 +272,7 @@ impl Vinland {
             popups: PopupManager::default(),
             pointer_pos: (0.0, 0.0).into(),
             data_device_state,
+            dnd_icon: None,
             cursor_status: CursorImageStatus::default_named(),
             xwayland: None,
             xwm: None,

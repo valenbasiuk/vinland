@@ -41,16 +41,13 @@
 - drag de ventanas flotantes (movimiento libre con super+click o arrastrando la barra csd via move_request)
 - screenshots nativas (atajo print para pantalla completa, super+print para ventana activa, guardado en ~/pictures/screenshots con timestamp, flash blanco visual)
 - zwlr_screencopy_manager_v1 (soporte para grim, slurp, obs y herramientas wayland con exportacion de framebuffer a shm)
+- drag-and-drop (negociacion de DnDGrab para pointer y touch, soporte de dnd_icon en rendering y frame callbacks, y DndGrabHandler dropped cleanup)
 
 
 
 // ==============================================================================
 // PENDIENTE (bugs / features incompletas)
 // ==============================================================================
-
-- wl_data_device_manager seat fix
-  * drag-and-drop no funciona correctamente todavía
-  * copy-paste básico parece funcionar pero revisar edge cases
 
 - multi-output support (más de un monitor)
   * el compositor hoy solo maneja un Output hardcodeado ("vinland-output")
