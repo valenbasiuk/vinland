@@ -403,33 +403,18 @@ impl Vinland {
 
         for (tiled_idx, win_idx) in tiled_indices.into_iter().enumerate() {
             let win = &mut self.windows_mut()[win_idx];
-            if total_tiled == 1 {
+            // calcular el nuevo rect segun posicion en el layout
+            let new_rect = if total_tiled == 1 {
                 // unica ventana: fullscreen con margen exterior en todos los bordes
                 let win_w = w - gap * 2;
                 let win_h = h - gap * 2;
-                win.rect = Rectangle::new((gap, gap + offset_y).into(), (win_w, win_h).into());
-                win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((win_w, win_h)));
-                    s.states.set(xdg_toplevel::State::TiledTop);
-                    s.states.set(xdg_toplevel::State::TiledBottom);
-                    s.states.set(xdg_toplevel::State::TiledLeft);
-                    s.states.set(xdg_toplevel::State::TiledRight);
-                });
-                win.surface.send_configure();
+                Rectangle::new((gap, gap + offset_y).into(), (win_w, win_h).into())
             } else if tiled_idx == 0 {
                 // master: columna izquierda
                 let usable = w - gap * 3;
                 let master_w = (usable as f32 * ratio) as i32;
                 let win_h = h - gap * 2;
-                win.rect = Rectangle::new((gap, gap + offset_y).into(), (master_w, win_h).into());
-                win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((master_w, win_h)));
-                    s.states.set(xdg_toplevel::State::TiledTop);
-                    s.states.set(xdg_toplevel::State::TiledBottom);
-                    s.states.set(xdg_toplevel::State::TiledLeft);
-                    s.states.set(xdg_toplevel::State::TiledRight);
-                });
-                win.surface.send_configure();
+                Rectangle::new((gap, gap + offset_y).into(), (master_w, win_h).into())
             } else {
                 // stack: columna derecha, dividida verticalmente
                 let usable = w - gap * 3;
@@ -438,21 +423,53 @@ impl Vinland {
                 let stack_w = w - stack_x - gap;
                 let stack_count = total_tiled as i32 - 1;
                 let stack_idx = tiled_idx as i32 - 1;
-
                 let usable_h = h - gap * (stack_count + 1);
                 let slot_h = usable_h / stack_count;
                 let y = gap + offset_y + stack_idx * (slot_h + gap);
+                Rectangle::new((stack_x, y).into(), (stack_w, slot_h).into())
+            };
 
-                win.rect = Rectangle::new((stack_x, y).into(), (stack_w, slot_h).into());
+            // disparar animacion si el rect cambia y las animaciones estan habilitadas
+            if self.config.anim.enabled && new_rect != win.rect {
+                // si ya habia una animacion en curso, partir desde anim_from (la pos visual actual)
+                // para evitar saltos: no queremos partir desde rect si la ventana estaba a mitad de camino
+                if win.anim_start.is_none() {
+                    // sin animacion previa: partir desde el rect actual
+                    win.anim_from = win.rect;
+                }
+                // con animacion previa: anim_from ya apunta a la pos visual actual
+                win.anim_start = Some(std::time::Instant::now());
+            }
+            win.rect = new_rect;
+
+            // notificar al cliente su nuevo tamaño
+            let new_size = new_rect.size;
+            if total_tiled == 1 {
                 win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((stack_w, slot_h)));
+                    s.size = Some(Size::from((new_size.w, new_size.h)));
                     s.states.set(xdg_toplevel::State::TiledTop);
                     s.states.set(xdg_toplevel::State::TiledBottom);
                     s.states.set(xdg_toplevel::State::TiledLeft);
                     s.states.set(xdg_toplevel::State::TiledRight);
                 });
-                win.surface.send_configure();
+            } else if tiled_idx == 0 {
+                win.surface.with_pending_state(|s| {
+                    s.size = Some(Size::from((new_size.w, new_size.h)));
+                    s.states.set(xdg_toplevel::State::TiledTop);
+                    s.states.set(xdg_toplevel::State::TiledBottom);
+                    s.states.set(xdg_toplevel::State::TiledLeft);
+                    s.states.set(xdg_toplevel::State::TiledRight);
+                });
+            } else {
+                win.surface.with_pending_state(|s| {
+                    s.size = Some(Size::from((new_size.w, new_size.h)));
+                    s.states.set(xdg_toplevel::State::TiledTop);
+                    s.states.set(xdg_toplevel::State::TiledBottom);
+                    s.states.set(xdg_toplevel::State::TiledLeft);
+                    s.states.set(xdg_toplevel::State::TiledRight);
+                });
             }
+            win.surface.send_configure();
         }
     }
 }
