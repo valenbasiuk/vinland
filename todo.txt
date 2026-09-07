@@ -42,7 +42,7 @@
 - screenshots nativas (atajo print para pantalla completa, super+print para ventana activa, guardado en ~/pictures/screenshots con timestamp, flash blanco visual)
 - zwlr_screencopy_manager_v1 (soporte para grim, slurp, obs y herramientas wayland con exportacion de framebuffer a shm)
 - drag-and-drop (negociacion de DnDGrab para pointer y touch, soporte de dnd_icon en rendering y frame callbacks, y DndGrabHandler dropped cleanup)
-
+- animaciones de ventana (lerp ease-out en retile con AnimConfig: enabled, duration_ms, curve; interpolacion suave al crear, mover y cambiar layout)
 
 
 // ==============================================================================
