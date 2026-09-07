@@ -35,13 +35,40 @@ use smithay::utils::Size;
 use smithay::wayland::shell::wlr_layer::Layer;
 use tracing::info;
 
+// lerp escalar para i32
+#[inline]
+fn lerp_i32(a: i32, b: i32, t: f32) -> i32 {
+    a + ((b - a) as f32 * t).round() as i32
+}
+
+/// Interpola un Rectangle<i32, Logical> entre `from` y `to` con factor t en [0,1]
+#[inline]
+fn lerp_rect(
+    from: smithay::utils::Rectangle<i32, smithay::utils::Logical>,
+    to: smithay::utils::Rectangle<i32, smithay::utils::Logical>,
+    t: f32,
+) -> smithay::utils::Rectangle<i32, smithay::utils::Logical> {
+    smithay::utils::Rectangle::new(
+        (
+            lerp_i32(from.loc.x, to.loc.x, t),
+            lerp_i32(from.loc.y, to.loc.y, t),
+        )
+            .into(),
+        (
+            lerp_i32(from.size.w, to.size.w, t),
+            lerp_i32(from.size.h, to.size.h, t),
+        )
+            .into(),
+    )
+}
+
 // render_frame -> dibuja un frame completo y avisa a los clientes
 //   1. colecta elementos de cada superficie wayland
 //   2. limpia el fondo
 //   3. dibuja cada elemento
 //   4. envía el frame a la pantalla
 //   5. manda frame callbacks a los clientes
-// TODO: cuando haga composicion realmente (tiling) hay que pensar en los damage rects
+// damage tracking pendiente (futuro: pasar damage_rects reales en lugar del fullscreen rect)
 pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let size = state.backend.window_size();
     let damage = smithay::utils::Rectangle::new((0, 0).into(), size);
@@ -51,13 +78,39 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let cursor_visible = !matches!(state.cursor_status, CursorImageStatus::Surface(_));
     state.backend.window().set_cursor_visible(cursor_visible);
 
+    // ── tick de animacion ──────────────────────────────────────────────────────
+    // para cada ventana con animacion activa, calculamos cuanto progreso lleva
+    // y avanzamos anim_from hacia rect segun la curva configurada.
+    if state.config.anim.enabled {
+        let duration_ms = state.config.anim.duration_ms as f32;
+        let curve = state.config.anim.curve;
+        let now = std::time::Instant::now();
+
+        for win in state.workspaces[state.active_workspace].windows.iter_mut() {
+            if let Some(start) = win.anim_start {
+                let elapsed_ms = now.duration_since(start).as_millis() as f32;
+                let raw_t = (elapsed_ms / duration_ms).clamp(0.0, 1.0);
+                let t = curve.apply(raw_t);
+
+                if raw_t >= 1.0 {
+                    // animacion terminada: fijar en destino y limpiar
+                    win.anim_from = win.rect;
+                    win.anim_start = None;
+                } else {
+                    // todavia animando: avanzar anim_from hacia rect
+                    win.anim_from = lerp_rect(win.anim_from, win.rect, t);
+                }
+            }
+        }
+    }
+
     // bind() -> prepara el renderer y obtiene el framebuffer del frame actual
     // nota: bind() toma borrow mutable de state.backend, por lo tanto no podemos
-    // llamar state.windows() después (ambos borran &state). recolectamos los datos
+    // llamar state.windows() despues (ambos borran &state). recolectamos los datos
     // que necesitamos de las ventanas antes del bind, como snapshots simples.
-    // snap de ventanas visibles: (surface, rect, decoration_mode)
-    // incluimos el decoration_mode para que el render loop sepa si debe dibujar
-    // bordes/titlebar SSD o saltearlos (la app tiene CSD propio).
+    // snap de ventanas visibles: (surface, rect_visual, decoration_mode)
+    // rect_visual es el rect interpolado (anim_from) cuando hay animacion activa,
+    // o simplemente rect si la animacion ya termino o esta deshabilitada.
     let window_snap: Vec<(
         smithay::wayland::shell::xdg::ToplevelSurface,
         smithay::utils::Rectangle<i32, smithay::utils::Logical>,
@@ -80,7 +133,15 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             )
             .flatten()
             .unwrap_or(DecoMode::ServerSide);
-            (w.surface.clone(), w.rect, deco_mode)
+            // usar el rect animado para el renderizado visual:
+            // si hay animacion activa, anim_from ya fue avanzado en el tick de arriba.
+            // si no, usamos rect directamente (anim_from == rect en estado estacionario).
+            let visual_rect = if state.config.anim.enabled && w.anim_start.is_some() {
+                w.anim_from
+            } else {
+                w.rect
+            };
+            (w.surface.clone(), visual_rect, deco_mode)
         })
         .collect();
 
