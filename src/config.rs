@@ -73,6 +73,60 @@ impl WindowRule {
     }
 }
 
+/// curva de interpolacion para animaciones de ventana
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AnimCurve {
+    /// velocidad constante
+    Linear,
+    /// rapido al inicio, lento al final (suave)
+    #[default]
+    EaseOut,
+    /// lento-rapido-lento (simetrico)
+    EaseInOut,
+}
+
+impl AnimCurve {
+    /// Aplica la curva a un t en [0.0, 1.0] y devuelve el t transformado
+    pub fn apply(self, t: f32) -> f32 {
+        match self {
+            AnimCurve::Linear => t,
+            // ease-out cubica: desacelera al final
+            AnimCurve::EaseOut => 1.0 - (1.0 - t).powi(3),
+            // ease-in-out cubica de bezier aproximada
+            AnimCurve::EaseInOut => {
+                if t < 0.5 {
+                    4.0 * t * t * t
+                } else {
+                    1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+                }
+            }
+        }
+    }
+}
+
+/// configuracion de animaciones de ventana
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct AnimConfig {
+    /// habilitar/deshabilitar animaciones globalmente
+    pub enabled: bool,
+    /// duracion de la animacion en milisegundos
+    pub duration_ms: u64,
+    /// curva de interpolacion: "linear", "ease_out", "ease_in_out"
+    pub curve: AnimCurve,
+}
+
+impl Default for AnimConfig {
+    fn default() -> Self {
+        AnimConfig {
+            enabled: true,
+            duration_ms: 180,
+            curve: AnimCurve::EaseOut,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -83,6 +137,7 @@ pub struct Config {
     pub decoration: DecorationConfig,
     pub screenshot: ScreenshotConfig,
     pub cursor: CursorConfig,
+    pub anim: AnimConfig,
     // reglas de ventana: [[rules]] en el toml
     #[serde(default = "default_rules")]
     pub rules: Vec<WindowRule>,

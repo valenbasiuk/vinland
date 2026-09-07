@@ -104,6 +104,8 @@ impl XdgShellHandler for Vinland {
         self.workspaces[target_ws_idx].windows.push(Window {
             surface: surface.clone(),
             rect,
+            anim_from: rect,
+            anim_start: None,
             minimized: false,
             floating: is_floating,
             tile_order,

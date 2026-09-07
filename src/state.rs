@@ -53,7 +53,12 @@ pub enum DragState {
 // tener surface y rect juntos = mejor cache locality que tenerlos en vecs separados
 pub struct Window {
     pub surface: ToplevelSurface,
+    /// rect objetivo: donde debe quedar la ventana al terminar la animacion
     pub rect: Rectangle<i32, Logical>,
+    /// rect de inicio de la animacion (desde donde se interpola)
+    pub anim_from: Rectangle<i32, Logical>,
+    /// momento en que comenzo la animacion actual (None = sin animacion activa)
+    pub anim_start: Option<std::time::Instant>,
     pub minimized: bool,
     pub floating: bool,
     pub tile_order: usize,
