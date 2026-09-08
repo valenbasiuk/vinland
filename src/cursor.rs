@@ -20,6 +20,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Size};
 
 /// un frame de cursor xcursor ya subido a la GPU
+#[allow(dead_code)]
 pub struct CursorFrame {
     pub texture: GlesTexture,
     pub size: Size<i32, Physical>,
@@ -30,6 +31,7 @@ pub struct CursorFrame {
 }
 
 /// un cursor cargado con todos sus frames (puede ser estatico con 1 frame o animado con varios)
+#[allow(dead_code)]
 pub struct LoadedCursor {
     pub frames: Vec<CursorFrame>,
 }
@@ -108,29 +110,11 @@ fn try_load_from_theme(
     let mut cursor_frames = Vec::new();
 
     for img in &frames {
-        // xcursor almacena RGBA en orden R,G,B,A → subir como Abgr8888 con swap
-        // el crate xcursor guarda los pixels como u32 ARGB (big endian en el archivo)
-        // en memoria de la maquina (little endian) queda como BGRA
-        // GlesRenderer espera Abgr8888 (RGBA en memoria) -> necesitamos swappear canales
         let width = img.width as i32;
         let height = img.height as i32;
 
-        // convertir de BGRA (como lo da xcursor en LE) a RGBA para OpenGL
-        let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-        for &pixel in &img.pixels_argb {
-            let a = ((pixel >> 24) & 0xFF) as u8;
-            let r = ((pixel >> 16) & 0xFF) as u8;
-            let g = ((pixel >> 8) & 0xFF) as u8;
-            let b = (pixel & 0xFF) as u8;
-            // Fourcc::Abgr8888 espera [R, G, B, A] en memoria
-            rgba.push(r);
-            rgba.push(g);
-            rgba.push(b);
-            rgba.push(a);
-        }
-
         match renderer.import_memory(
-            &rgba,
+            &img.pixels_rgba,
             Fourcc::Abgr8888,
             (width, height).into(),
             false,
@@ -138,13 +122,13 @@ fn try_load_from_theme(
             Ok(texture) => {
                 cursor_frames.push(CursorFrame {
                     texture,
-                    size: Size::from((width, height)),
-                    hotspot: Point::from((img.xhot as i32, img.yhot as i32)),
+                    size: (width, height).into(),
+                    hotspot: (img.xhot as i32, img.yhot as i32).into(),
                     delay_ms: img.delay,
                 });
             }
             Err(e) => {
-                tracing::warn!("[cursor] error importando frame a GL: {}", e);
+                tracing::warn!("[cursor] error importando textura GL del cursor: {:?}", e);
             }
         }
     }
