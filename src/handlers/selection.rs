@@ -5,6 +5,7 @@ use smithay::input::dnd::{DnDGrab, DndGrabHandler, GrabType, Source};
 use smithay::input::pointer::Focus;
 use smithay::input::Seat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::Resource;
 use smithay::utils::Serial;
 use smithay::wayland::selection::data_device::{
     DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler,
@@ -79,7 +80,13 @@ impl WaylandDndGrabHandler for Vinland {
 
 // DndGrabHandler -> limpia el estado cuando el drag-and-drop finaliza o se suelta el item
 impl DndGrabHandler for Vinland {
-    fn dropped(&mut self, _target: Option<WlSurface>, _seat: Seat<Self>) {
+    fn dropped(
+        &mut self,
+        _target: Option<smithay::input::dnd::DndTarget<'_, Self>>,
+        _validated: bool,
+        _seat: Seat<Self>,
+        _location: smithay::utils::Point<f64, smithay::utils::Logical>,
+    ) {
         tracing::info!("[dnd] drag-and-drop finalizado (dropped)");
         self.dnd_icon = None;
         self.backend.window().request_redraw();
