@@ -47,6 +47,17 @@ pub enum DragState {
         source_surface: WlSurface,
         grab_offset: Point<f64, Logical>,
     },
+    FloatResize {
+        source_surface: WlSurface,
+        initial_loc: Point<i32, Logical>,
+        initial_size: Size<i32, Logical>,
+        start_pos: Point<f64, Logical>,
+        edges: Option<smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge>,
+    },
+    TileRatioResize {
+        start_x: f64,
+        initial_ratio: f32,
+    },
 }
 
 // window -> representa una ventana y su posición/tamaño en pantalla (tiling layout)
@@ -400,6 +411,7 @@ impl Vinland {
 
         // offset_y: las ventanas tileadas empiezan debajo del titlebar (si existe)
         let offset_y = th;
+        let anim_enabled = self.config.anim.enabled;
 
         for (tiled_idx, win_idx) in tiled_indices.into_iter().enumerate() {
             let win = &mut self.windows_mut()[win_idx];
@@ -430,7 +442,7 @@ impl Vinland {
             };
 
             // disparar animacion si el rect cambia y las animaciones estan habilitadas
-            if self.config.anim.enabled && new_rect != win.rect {
+            if anim_enabled && new_rect != win.rect {
                 // si ya habia una animacion en curso, partir desde anim_from (la pos visual actual)
                 // para evitar saltos: no queremos partir desde rect si la ventana estaba a mitad de camino
                 if win.anim_start.is_none() {
