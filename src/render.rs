@@ -121,18 +121,10 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         .filter(|w| !w.minimized && w.rect.size.w > 0 && w.rect.size.h > 0)
         .map(|w| {
             // leer el decoration_mode negociado con la app (si lo hay)
-            let deco_mode = smithay::wayland::compositor::with_states(
-                w.surface.wl_surface(),
-                |states| {
-                    states
-                        .cached_state
-                        .get::<smithay::wayland::shell::xdg::SurfaceCachedState>()
-                        .current()
-                        .decoration_mode
-                },
-            )
-            .flatten()
-            .unwrap_or(DecoMode::ServerSide);
+            let deco_mode = w
+                .surface
+                .with_committed_state(|state| state.and_then(|s| s.decoration_mode))
+                .unwrap_or(DecoMode::ServerSide);
             // usar el rect animado para el renderizado visual:
             // si hay animacion activa, anim_from ya fue avanzado en el tick de arriba.
             // si no, usamos rect directamente (anim_from == rect en estado estacionario).
@@ -533,7 +525,6 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         let flash_color = Color32F::new(1.0, 1.0, 1.0, alpha);
         let _ = frame.draw_solid(damage, &[damage], flash_color);
         state.screenshot_flash_frames -= 1;
-        state.backend.window().request_redraw();
     }
 
     let _ = frame.finish().unwrap();
@@ -550,7 +541,6 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         );
         if state.config.screenshot.flash {
             state.screenshot_flash_frames = 2;
-            state.backend.window().request_redraw();
         }
     }
 
@@ -562,6 +552,10 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
 
     drop(framebuffer);
     state.backend.submit(None).unwrap();
+
+    if state.screenshot_flash_frames > 0 {
+        state.backend.window().request_redraw();
+    }
 
     // send_frames_surface_tree -> avisa a cada cliente que su frame fue mostrado
     let output = state.output.clone();
@@ -693,7 +687,11 @@ pub fn capture_and_save_screenshot(
         return;
     }
 
-    match renderer.copy_framebuffer(framebuffer, region, Fourcc::Abgr8888) {
+    let buffer_region = Rectangle::new(
+        (region.loc.x, region.loc.y).into(),
+        (region.size.w, region.size.h).into(),
+    );
+    match renderer.copy_framebuffer(framebuffer, buffer_region, Fourcc::Abgr8888) {
         Ok(mapping) => match renderer.map_texture(&mapping) {
             Ok(slice) => {
                 if let Some(mut img) = image::RgbaImage::from_raw(w, h, slice.to_vec()) {
@@ -735,13 +733,18 @@ pub fn process_screencopy_frame(
         return;
     }
 
-    match renderer.copy_framebuffer(framebuffer, pending.region, Fourcc::Abgr8888) {
+    let buffer_region = Rectangle::new(
+        (pending.region.loc.x, pending.region.loc.y).into(),
+        (pending.region.size.w, pending.region.size.h).into(),
+    );
+    match renderer.copy_framebuffer(framebuffer, buffer_region, Fourcc::Abgr8888) {
         Ok(mapping) => match renderer.map_texture(&mapping) {
             Ok(src_slice) => {
                 let src_stride = w * 4;
                 let write_res = smithay::wayland::shm::with_buffer_contents_mut(
                     &pending.buffer,
-                    |dest_slice, buffer_data| {
+                    |ptr, len, buffer_data| {
+                        let dest_slice = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
                         let dest_stride = buffer_data.stride as usize;
                         let is_bgr = buffer_data.format
                             == smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888
