@@ -280,6 +280,7 @@ impl Default for Config {
             decoration: DecorationConfig::default(),
             screenshot: ScreenshotConfig::default(),
             cursor: CursorConfig::default(),
+            anim: AnimConfig::default(),
             rules: default_rules(),
             keybinds: HashMap::new(),
             parsed_keybinds: Vec::new(),
