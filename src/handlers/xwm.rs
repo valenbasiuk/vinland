@@ -1,14 +1,11 @@
 // handlers/xwm.rs
 // manejo de ventanas y shells X11 via Xwayland
 
-use smithay::input::dnd::DndGrabHandler;
 use smithay::wayland::xwayland_shell::{XWaylandShellHandler, XWaylandShellState};
 use smithay::xwayland::{X11Surface, X11Wm, XwmHandler, xwm::{ResizeEdge as X11ResizeEdge, XwmId}};
 use tracing::info;
 
 use crate::state::Vinland;
-
-impl DndGrabHandler for Vinland {}
 
 impl XWaylandShellHandler for Vinland {
     fn xwayland_shell_state(&mut self) -> &mut XWaylandShellState {
