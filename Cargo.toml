@@ -23,3 +23,4 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 notify = "7"
 wayland-protocols-wlr = { version = "0.3", features = ["server"] }
 xcursor = "0.3"
+serde_json = "1"
