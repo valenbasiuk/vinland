@@ -24,6 +24,10 @@ use smithay::wayland::xwayland_shell::XWaylandShellState;
 use smithay::xwayland::{X11Wm, XWayland};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
+use smithay::wayland::fractional_scale::FractionalScaleManagerState;
+use smithay::wayland::presentation::PresentationState;
+use smithay::wayland::viewporter::ViewporterState;
+
 use crate::config::Config;
 use crate::cursor::{load_cursor, LoadedCursor};
 use crate::handlers::screencopy::ScreencopyState;
@@ -134,6 +138,12 @@ pub struct Vinland {
     pub cursor_frame_idx: usize,
     // momento en que se cambió al frame actual (para avanzar segun delay_ms)
     pub cursor_frame_time: std::time::Instant,
+    #[allow(dead_code)]
+    pub viewporter_state: ViewporterState,
+    #[allow(dead_code)]
+    pub fractional_scale_manager_state: FractionalScaleManagerState,
+    #[allow(dead_code)]
+    pub presentation_state: PresentationState,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -264,6 +274,9 @@ impl Vinland {
         let xwayland_shell_state = XWaylandShellState::new::<Vinland>(&display_handle);
         let layer_shell_state = WlrLayerShellState::new::<Vinland>(&display_handle);
         let xdg_decoration_state = XdgDecorationState::new::<Vinland>(&display_handle);
+        let viewporter_state = ViewporterState::new::<Vinland>(&display_handle);
+        let fractional_scale_manager_state = FractionalScaleManagerState::new::<Vinland>(&display_handle);
+        let presentation_state = PresentationState::new::<Vinland>(&display_handle, 1);
 
         // screencopy: permite a utilidades como grim/slurp capturar pantalla
         display_handle.create_global::<Vinland, ZwlrScreencopyManagerV1, ()>(3, ());
@@ -307,6 +320,9 @@ impl Vinland {
             cursor_theme: None,
             cursor_frame_idx: 0,
             cursor_frame_time: std::time::Instant::now(),
+            viewporter_state,
+            fractional_scale_manager_state,
+            presentation_state,
         };
 
         (state, winit_evt_loop)
@@ -365,6 +381,22 @@ impl Vinland {
         // forzar redibujo inmediato para reflejar colores de bordes, wallpaper, etc.
         self.backend.window().request_redraw();
         tracing::info!("[hot-reload] configuracion recargada exitosamente");
+    }
+
+    /// cambia al workspace especificado (base 0), enfoca su primera ventana y redibuja
+    pub fn switch_workspace(&mut self, idx: usize) {
+        if idx < self.workspaces.len() && idx != self.active_workspace {
+            tracing::info!("[workspace] cambiar a workspace {}", idx + 1);
+            self.active_workspace = idx;
+            self.retile();
+            let first_win = self
+                .windows()
+                .iter()
+                .find(|w| !w.minimized)
+                .map(|w| w.surface.wl_surface().clone());
+            self.set_keyboard_focus_surface(first_win.as_ref(), Serial::from(0));
+            self.backend.window().request_redraw();
+        }
     }
 
     // retile -> calcula y envia la nueva disposicion tiling a todas las ventanas
