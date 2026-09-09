@@ -450,23 +450,3 @@ BAJA PRIORIDAD / FUTURO:
     reload_config
     screenshot(output) -> bytes
     subscribe(event_type) -> stream de eventos
-
-// ==============================================================================
-// PRIORIDAD SUGERIDA DE IMPLEMENTACIÓN (para próximas IAs):
-//
-//  1. Config system (src/config.rs, TOML, hot-reload)
-//  2. Mover todos los hardcodes a Config (GAP, refresh, dialog_size, xkb, etc.)
-//  3. zwlr_layer_shell_v1 (para poder tener barra de tareas)
-//  4. Wallpaper / background image (textura GL + ScaleMode)
-//  5. Workspaces (Vec<Workspace> en state)
-//  6. Popup / menu support completar (xdg_popup grab)
-//  7. DRM backend (correr fuera de un compositor host)
-//  8. zwlr_screencopy + utilidad de screenshot
-//  9. Decoraciones SSD opcionales (xdg-decoration + borde GL)
-// 10. Cursor theme (xcursor crate + textura GL custom)
-// 11. Damage tracking real (DamageTracker de smithay)
-// 12. Animaciones de ventana (lerp en render.rs)
-// 13. Rounded corners + sombras (shaders GL)
-// 14. Protocolos restantes de alta/media prioridad
-// 15. XWayland (habilitar la feature que ya está en Cargo.toml)
-// ==============================================================================
