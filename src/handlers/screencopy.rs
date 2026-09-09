@@ -8,7 +8,7 @@ use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::{
 };
 use smithay::reexports::wayland_server::{
     protocol::{wl_buffer::WlBuffer, wl_shm},
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
 };
 use smithay::utils::{Physical, Rectangle};
 
