@@ -14,6 +14,7 @@ use tracing::info;
 mod config;
 mod cursor;
 mod handlers;
+mod ipc;
 mod render;
 mod state;
 
@@ -61,7 +62,8 @@ fn main() {
 
     // fuente 2 -> socket wayland (conexiones nuevas de clientes)
     let socket = smithay::wayland::socket::ListeningSocketSource::new_auto().unwrap();
-    info!("socket wayland: {:?}", socket.socket_name());
+    let wayland_name = socket.socket_name().to_str().map(|s| s.to_string());
+    info!("socket wayland: {:?}", wayland_name);
     loop_handle
         .insert_source(socket, |stream, _, state| {
             state
@@ -75,6 +77,25 @@ fn main() {
                 .unwrap();
         })
         .unwrap();
+
+    // fuente 2.5 -> socket IPC unix nativo para control externo (vinlandctl, waybar, scripts)
+    if let Ok((ipc_listener, ipc_path)) = ipc::init_ipc_listener(wayland_name.as_deref()) {
+        info!("socket ipc vinland: {:?}", ipc_path);
+        loop_handle
+            .insert_source(
+                smithay::reexports::calloop::generic::Generic::new(
+                    ipc_listener,
+                    calloop::Interest::READ,
+                    calloop::Mode::Level,
+                ),
+                |_, listener, state| {
+                    let listener_mut = unsafe { listener.get_mut() };
+                    ipc::handle_ipc_connections(listener_mut, state);
+                    Ok(calloop::PostAction::Continue)
+                },
+            )
+            .unwrap();
+    }
 
     // fuente 3 -> xwayland (socket x11)
     use smithay::xwayland::{X11Wm, XWayland, XWaylandEvent};
