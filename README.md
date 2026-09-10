@@ -1,12 +1,25 @@
 # this is not intended to be used.
-its mostly an experiment to learn about Rust, how compositors work and the low level connection between the kernel and the screen
+mostly an experiment to learn Rust, how compositors work, and the low ;evel connection between the kernel and the screen. increasingly functional though :S
 
-# whats it for right now/what i want to achieve
+# what its for / the goal
 
-for now, it works as a basic tiling compositor for native wayland apps. it handles window layout, inputs (mouse/keyboard) and dropdowns/popups (including grabs, focus states and timing fixes)
-workspaces are sketchy but they work, supporting up to 999 and program forwarding. app borders might not be accurate
+tiling compositor for native wayland apps (master-stack layout). handles window layout, inputs, dropdowns/popups, workspaces (up to 999), drag & resize, layer shell (waybar works), screencopy (grim/slurp work), XWayland, animations, and a unix socket IPC at `/run/user/1000/vinland.sock`.
 
-final project would be to make this into a simple DE with a lightning fast compositor with a focus on simplicity to try and
-match the commercial limits on low latency compositors.
+app borders might not be accurate. multi-monitor is not supported yet.
 
-name comes from the Vinland region from the game "Fear and Hunger"
+intended to be part of a small experimental DE
+
+# howto
+
+```
+cargo build
+cargo run
+```
+
+take note of your `WAYLAND_DISPLAY` — nested inside another compositor it'll be something like `wayland-1`.
+to use tools like grim: `WAYLAND_DISPLAY=wayland-1 grim screenshot.png`
+
+# pds
+
+comes from the Vinland region in "Fear and Hunger"
+:3c
