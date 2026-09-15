@@ -497,6 +497,46 @@ impl Config {
             sym: K::Print,
             action: KeyAction::ScreenshotWindow,
         });
+
+        // Super+M -> maximizar ventana activa
+        self.parsed_keybinds.push(ParsedKeybind {
+            logo: true,
+            shift: false,
+            ctrl: false,
+            alt: false,
+            sym: K::M,
+            action: KeyAction::Maximize,
+        });
+
+        // Super+F -> pantalla completa
+        self.parsed_keybinds.push(ParsedKeybind {
+            logo: true,
+            shift: false,
+            ctrl: false,
+            alt: false,
+            sym: K::F,
+            action: KeyAction::Fullscreen,
+        });
+
+        // Super+Space -> alternar layout (MasterStack <-> Monocle)
+        self.parsed_keybinds.push(ParsedKeybind {
+            logo: true,
+            shift: false,
+            ctrl: false,
+            alt: false,
+            sym: smithay::input::keyboard::Keysym::space,
+            action: KeyAction::ToggleLayout,
+        });
+
+        // Super+Shift+Space -> alternar ventana flotante / tileada
+        self.parsed_keybinds.push(ParsedKeybind {
+            logo: true,
+            shift: true,
+            ctrl: false,
+            alt: false,
+            sym: smithay::input::keyboard::Keysym::space,
+            action: KeyAction::ToggleFloat,
+        });
     }
 
     // parsea el hashmap crudo [keybinds] del toml y llena parsed_keybinds
