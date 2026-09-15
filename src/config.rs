@@ -19,6 +19,10 @@ pub enum KeyAction {
     Exec(String),
     Screenshot,             // captura de pantalla completa
     ScreenshotWindow,       // captura de la ventana activa
+    Maximize,               // maximizar/restaurar la ventana con foco
+    Fullscreen,             // pantalla completa / restaurar la ventana con foco
+    ToggleFloat,            // flotar/tilear la ventana con foco
+    ToggleLayout,           // ciclar entre layouts de tiling (MasterStack <-> Monocle)
 }
 
 // parsedkeybind -> un atajo de teclado ya resuelto con sus modificadores y accion
@@ -761,6 +765,10 @@ fn parse_action(s: &str) -> Option<KeyAction> {
         "focus_prev" | "focusprev" => Some(KeyAction::FocusPrev),
         "screenshot" => Some(KeyAction::Screenshot),
         "screenshot_window" | "screenshot-window" => Some(KeyAction::ScreenshotWindow),
+        "maximize" | "max" => Some(KeyAction::Maximize),
+        "fullscreen" | "full" => Some(KeyAction::Fullscreen),
+        "toggle_float" | "togglefloat" | "float" => Some(KeyAction::ToggleFloat),
+        "toggle_layout" | "togglelayout" | "layout" => Some(KeyAction::ToggleLayout),
         "focus" => {
             let target = parts.get(1)?.to_lowercase();
             match target.as_str() {
