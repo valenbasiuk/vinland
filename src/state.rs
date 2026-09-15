@@ -76,6 +76,8 @@ pub struct Window {
     pub anim_start: Option<std::time::Instant>,
     pub minimized: bool,
     pub floating: bool,
+    pub maximized: bool,
+    pub fullscreen: bool,
     pub tile_order: usize,
     pub rules_evaluated: bool,
 }
@@ -425,6 +427,12 @@ impl Vinland {
         // h disponible = alto total menos el espacio que ocupa el titlebar SSD
         let h: i32 = out_size.h - th;
 
+        // obtener superficie con foco para monocle
+        let focused_surface = self
+            .seat
+            .get_keyboard()
+            .and_then(|k| k.current_focus());
+
         // recopilar los indices de ventanas tilables ordenadas por su tile_order estable
         let mut tiled_indices: Vec<usize> = self
             .windows()
@@ -444,33 +452,49 @@ impl Vinland {
         // offset_y: las ventanas tileadas empiezan debajo del titlebar (si existe)
         let offset_y = th;
         let anim_enabled = self.config.anim.enabled;
+        let layout = self.config.tiling.layout;
 
         for (tiled_idx, win_idx) in tiled_indices.into_iter().enumerate() {
             let win = &mut self.windows_mut()[win_idx];
-            // calcular el nuevo rect segun posicion en el layout
-            let new_rect = if total_tiled == 1 {
-                // unica ventana: fullscreen con margen exterior en todos los bordes
-                let win_w = w - gap * 2;
-                let win_h = h - gap * 2;
-                Rectangle::new((gap, gap + offset_y).into(), (win_w, win_h).into())
-            } else if tiled_idx == 0 {
-                // master: columna izquierda
-                let usable = w - gap * 3;
-                let master_w = (usable as f32 * ratio) as i32;
-                let win_h = h - gap * 2;
-                Rectangle::new((gap, gap + offset_y).into(), (master_w, win_h).into())
+
+            // fullscreen: ocupa el output completo, sin gaps ni titlebar
+            let new_rect = if win.fullscreen {
+                Rectangle::new((0, 0).into(), (out_size.w, out_size.h).into())
+            // maximized: ocupa toda el area usable (con titlebar)
+            } else if win.maximized {
+                Rectangle::new((0, offset_y).into(), (w, h).into())
             } else {
-                // stack: columna derecha, dividida verticalmente
-                let usable = w - gap * 3;
-                let master_w = (usable as f32 * ratio) as i32;
-                let stack_x = gap + master_w + gap;
-                let stack_w = w - stack_x - gap;
-                let stack_count = total_tiled as i32 - 1;
-                let stack_idx = tiled_idx as i32 - 1;
-                let usable_h = h - gap * (stack_count + 1);
-                let slot_h = usable_h / stack_count;
-                let y = gap + offset_y + stack_idx * (slot_h + gap);
-                Rectangle::new((stack_x, y).into(), (stack_w, slot_h).into())
+                use crate::config::TilingLayout;
+                match layout {
+                    // monocle: todas en el mismo rect, la enfocada queda arriba
+                    TilingLayout::Monocle => {
+                        Rectangle::new((gap, gap + offset_y).into(), (w - gap * 2, h - gap * 2).into())
+                    }
+                    // master-stack: layout por defecto
+                    TilingLayout::MasterStack => {
+                        if total_tiled == 1 {
+                            let win_w = w - gap * 2;
+                            let win_h = h - gap * 2;
+                            Rectangle::new((gap, gap + offset_y).into(), (win_w, win_h).into())
+                        } else if tiled_idx == 0 {
+                            let usable = w - gap * 3;
+                            let master_w = (usable as f32 * ratio) as i32;
+                            let win_h = h - gap * 2;
+                            Rectangle::new((gap, gap + offset_y).into(), (master_w, win_h).into())
+                        } else {
+                            let usable = w - gap * 3;
+                            let master_w = (usable as f32 * ratio) as i32;
+                            let stack_x = gap + master_w + gap;
+                            let stack_w = w - stack_x - gap;
+                            let stack_count = total_tiled as i32 - 1;
+                            let stack_idx = tiled_idx as i32 - 1;
+                            let usable_h = h - gap * (stack_count + 1);
+                            let slot_h = usable_h / stack_count;
+                            let y = gap + offset_y + stack_idx * (slot_h + gap);
+                            Rectangle::new((stack_x, y).into(), (stack_w, slot_h).into())
+                        }
+                    }
+                }
             };
 
             // disparar animacion si el rect cambia y las animaciones estan habilitadas
