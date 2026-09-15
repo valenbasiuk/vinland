@@ -153,11 +153,23 @@ pub struct Config {
     pub parsed_keybinds: Vec<ParsedKeybind>,
 }
 
+/// layout de ventanas tileadas
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TilingLayout {
+    /// ventana principal a la izquierda, resto apiladas a la derecha
+    #[default]
+    MasterStack,
+    /// una ventana a la vez ocupa todo el espacio (la ventana con foco)
+    Monocle,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct TilingConfig {
     pub gap: i32,
     pub master_ratio: f32, // fracción de pantalla que ocupa el master (0.0–1.0)
+    pub layout: TilingLayout, // layout activo (puede cambiarse en runtime)
 }
 
 #[derive(Debug, Deserialize)]
@@ -304,6 +316,7 @@ impl Default for TilingConfig {
         Self {
             gap: 8,
             master_ratio: 0.5,
+            layout: TilingLayout::MasterStack,
         }
     }
 }
