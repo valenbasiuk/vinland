@@ -245,6 +245,85 @@ impl Vinland {
                                         }
                                     }
                                 }
+                                KeyAction::Maximize => {
+                                    let kb = state.seat.get_keyboard().unwrap();
+                                    if let Some(focused_surface) = kb.current_focus() {
+                                        if let Some(win) = state
+                                            .windows_mut()
+                                            .iter_mut()
+                                            .find(|w| w.surface.wl_surface() == &focused_surface)
+                                        {
+                                            win.maximized = !win.maximized;
+                                            if win.maximized {
+                                                win.fullscreen = false;
+                                            }
+                                            info!("[window] toggle maximize -> {}", win.maximized);
+                                        }
+                                        state.retile();
+                                    }
+                                }
+                                KeyAction::Fullscreen => {
+                                    let kb = state.seat.get_keyboard().unwrap();
+                                    if let Some(focused_surface) = kb.current_focus() {
+                                        if let Some(win) = state
+                                            .windows_mut()
+                                            .iter_mut()
+                                            .find(|w| w.surface.wl_surface() == &focused_surface)
+                                        {
+                                            win.fullscreen = !win.fullscreen;
+                                            if win.fullscreen {
+                                                win.maximized = false;
+                                            }
+                                            info!("[window] toggle fullscreen -> {}", win.fullscreen);
+                                        }
+                                        state.retile();
+                                    }
+                                }
+                                KeyAction::ToggleFloat => {
+                                    let kb = state.seat.get_keyboard().unwrap();
+                                    if let Some(focused_surface) = kb.current_focus() {
+                                        let out_size = state.backend.window_size();
+                                        let dw = state.config.floating.dialog_width;
+                                        let dh = state.config.floating.dialog_height;
+                                        if let Some(win) = state
+                                            .windows_mut()
+                                            .iter_mut()
+                                            .find(|w| w.surface.wl_surface() == &focused_surface)
+                                        {
+                                            win.floating = !win.floating;
+                                            win.maximized = false;
+                                            win.fullscreen = false;
+                                            info!("[window] toggle floating -> {}", win.floating);
+                                            if win.floating {
+                                                let w = dw.min(out_size.w - 40);
+                                                let h = dh.min(out_size.h - 40);
+                                                let x = (out_size.w - w) / 2;
+                                                let y = (out_size.h - h) / 2;
+                                                win.rect = smithay::utils::Rectangle::new((x, y).into(), (w, h).into());
+                                                win.surface.with_pending_state(|s| {
+                                                    s.size = Some((w, h).into());
+                                                    s.states.unset(xdg_toplevel::State::TiledTop);
+                                                    s.states.unset(xdg_toplevel::State::TiledBottom);
+                                                    s.states.unset(xdg_toplevel::State::TiledLeft);
+                                                    s.states.unset(xdg_toplevel::State::TiledRight);
+                                                    s.states.unset(xdg_toplevel::State::Maximized);
+                                                    s.states.unset(xdg_toplevel::State::Fullscreen);
+                                                });
+                                                win.surface.send_configure();
+                                            }
+                                        }
+                                        state.retile();
+                                    }
+                                }
+                                KeyAction::ToggleLayout => {
+                                    use crate::config::TilingLayout;
+                                    state.config.tiling.layout = match state.config.tiling.layout {
+                                        TilingLayout::MasterStack => TilingLayout::Monocle,
+                                        TilingLayout::Monocle => TilingLayout::MasterStack,
+                                    };
+                                    info!("[layout] switched layout to {:?}", state.config.tiling.layout);
+                                    state.retile();
+                                }
                             }
                             return FilterResult::Intercept(());
                         }
