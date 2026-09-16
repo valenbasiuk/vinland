@@ -108,6 +108,8 @@ impl XdgShellHandler for Vinland {
             anim_start: None,
             minimized: false,
             floating: is_floating,
+            maximized: false,
+            fullscreen: false,
             tile_order,
             rules_evaluated,
         });
@@ -337,6 +339,48 @@ impl XdgShellHandler for Vinland {
         self.unconstrain_popup(&surface);
         surface.send_repositioned(token);
         let _ = surface.send_configure();
+    }
+
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        let wl_surf = surface.wl_surface().clone();
+        if let Some(win) = self.windows_mut().iter_mut().find(|w| w.surface.wl_surface() == &wl_surf) {
+            win.maximized = true;
+            win.fullscreen = false;
+            info!("[XDG] maximize_request aceptado para {:?}", wl_surf.id());
+        }
+        self.retile();
+    }
+
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        let wl_surf = surface.wl_surface().clone();
+        if let Some(win) = self.windows_mut().iter_mut().find(|w| w.surface.wl_surface() == &wl_surf) {
+            win.maximized = false;
+            info!("[XDG] unmaximize_request aceptado para {:?}", wl_surf.id());
+        }
+        self.retile();
+    }
+
+    fn fullscreen_request(
+        &mut self,
+        surface: ToplevelSurface,
+        _output: Option<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>,
+    ) {
+        let wl_surf = surface.wl_surface().clone();
+        if let Some(win) = self.windows_mut().iter_mut().find(|w| w.surface.wl_surface() == &wl_surf) {
+            win.fullscreen = true;
+            win.maximized = false;
+            info!("[XDG] fullscreen_request aceptado para {:?}", wl_surf.id());
+        }
+        self.retile();
+    }
+
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        let wl_surf = surface.wl_surface().clone();
+        if let Some(win) = self.windows_mut().iter_mut().find(|w| w.surface.wl_surface() == &wl_surf) {
+            win.fullscreen = false;
+            info!("[XDG] unfullscreen_request aceptado para {:?}", wl_surf.id());
+        }
+        self.retile();
     }
 }
 
