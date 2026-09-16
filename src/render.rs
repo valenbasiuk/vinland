@@ -115,6 +115,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         smithay::wayland::shell::xdg::ToplevelSurface,
         smithay::utils::Rectangle<i32, smithay::utils::Logical>,
         DecoMode,
+        bool,
     )> = state
         .windows()
         .iter()
@@ -133,7 +134,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
             } else {
                 w.rect
             };
-            (w.surface.clone(), visual_rect, deco_mode)
+            (w.surface.clone(), visual_rect, deco_mode, w.fullscreen)
         })
         .collect();
 
@@ -158,7 +159,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     let mut window_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
     let mut popup_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 
-    for (surface, rect, _deco) in window_snap.iter().rev() {
+    for (surface, rect, _deco, _fs) in window_snap.iter().rev() {
         // (el snapshot ya filtró minimizadas y con rect 0)
         // el geo_loc es el offset dentro del buffer donde empieza el contenido visible real (excluyendo sombras CSD)
         let geo = smithay::wayland::compositor::with_states(surface.wl_surface(), |states| {
@@ -242,12 +243,19 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     }
 
     // Construir all_elements en front-to-back:
-    // [cursor] -> [Overlay] -> [Popups] -> [Top] -> [Ventanas] -> [Bottom] -> [Background]
+    // Si hay ventana fullscreen: [cursor] -> [Overlay] -> [Popups] -> [Ventanas] -> [Top] -> [Bottom] -> [Background]
+    // Normal: [cursor] -> [Overlay] -> [Popups] -> [Top] -> [Ventanas] -> [Bottom] -> [Background]
     let mut all_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+    let has_fullscreen = window_snap.iter().any(|(_, _, _, fs)| *fs);
     all_elements.extend(overlay_elements);
     all_elements.extend(popup_elements);
-    all_elements.extend(top_elements);
-    all_elements.extend(window_elements);
+    if has_fullscreen {
+        all_elements.extend(window_elements);
+        all_elements.extend(top_elements);
+    } else {
+        all_elements.extend(top_elements);
+        all_elements.extend(window_elements);
+    }
     all_elements.extend(bottom_elements);
     all_elements.extend(background_elements);
 
@@ -426,10 +434,9 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         let active_color = Color32F::from(state.config.decoration.active_border_color);
         let inactive_color = Color32F::from(state.config.decoration.inactive_border_color);
 
-        for (surface, rect, deco_mode) in &window_snap {
-            // saltar ventanas con decoracion client-side:
-            // la app dibuja sus propias sombras/bordes, no queremos doble borde
-            if *deco_mode == DecoMode::ClientSide {
+        for (surface, rect, deco_mode, fullscreen) in &window_snap {
+            // saltar si esta fullscreen o tiene decoracion client-side
+            if *fullscreen || *deco_mode == DecoMode::ClientSide {
                 continue;
             }
             // determinar si esta ventana tiene el foco de teclado
@@ -481,8 +488,8 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         let tb_inactive = Color32F::from(state.config.decoration.titlebar_color_inactive);
         let bw = state.config.decoration.border_width;
 
-        for (surface, rect, deco_mode) in &window_snap {
-            if *deco_mode == DecoMode::ClientSide {
+        for (surface, rect, deco_mode, fullscreen) in &window_snap {
+            if *fullscreen || *deco_mode == DecoMode::ClientSide {
                 continue;
             }
             let is_active = focused_surface_id
@@ -560,7 +567,7 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
     // send_frames_surface_tree -> avisa a cada cliente que su frame fue mostrado
     let output = state.output.clone();
     // usamos el snapshot que ya teníamos (evita conflicto de borrow con renderer activo)
-    for (surface, _rect, _deco) in &window_snap {
+    for (surface, _rect, _deco, _fs) in &window_snap {
         // frame callback al toplevel
         send_frames_surface_tree(
             surface.wl_surface(),
