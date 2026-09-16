@@ -427,12 +427,6 @@ impl Vinland {
         // h disponible = alto total menos el espacio que ocupa el titlebar SSD
         let h: i32 = out_size.h - th;
 
-        // obtener superficie con foco para monocle
-        let focused_surface = self
-            .seat
-            .get_keyboard()
-            .and_then(|k| k.current_focus());
-
         // recopilar los indices de ventanas tilables ordenadas por su tile_order estable
         let mut tiled_indices: Vec<usize> = self
             .windows()
@@ -512,31 +506,34 @@ impl Vinland {
 
             // notificar al cliente su nuevo tamaño
             let new_size = new_rect.size;
-            if total_tiled == 1 {
-                win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((new_size.w, new_size.h)));
+            let is_fullscreen = win.fullscreen;
+            let is_maximized = win.maximized;
+
+            win.surface.with_pending_state(|s| {
+                s.size = Some(Size::from((new_size.w, new_size.h)));
+                if is_fullscreen {
+                    s.states.set(xdg_toplevel::State::Fullscreen);
+                    s.states.unset(xdg_toplevel::State::Maximized);
+                    s.states.unset(xdg_toplevel::State::TiledTop);
+                    s.states.unset(xdg_toplevel::State::TiledBottom);
+                    s.states.unset(xdg_toplevel::State::TiledLeft);
+                    s.states.unset(xdg_toplevel::State::TiledRight);
+                } else if is_maximized {
+                    s.states.unset(xdg_toplevel::State::Fullscreen);
+                    s.states.set(xdg_toplevel::State::Maximized);
+                    s.states.unset(xdg_toplevel::State::TiledTop);
+                    s.states.unset(xdg_toplevel::State::TiledBottom);
+                    s.states.unset(xdg_toplevel::State::TiledLeft);
+                    s.states.unset(xdg_toplevel::State::TiledRight);
+                } else {
+                    s.states.unset(xdg_toplevel::State::Fullscreen);
+                    s.states.unset(xdg_toplevel::State::Maximized);
                     s.states.set(xdg_toplevel::State::TiledTop);
                     s.states.set(xdg_toplevel::State::TiledBottom);
                     s.states.set(xdg_toplevel::State::TiledLeft);
                     s.states.set(xdg_toplevel::State::TiledRight);
-                });
-            } else if tiled_idx == 0 {
-                win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((new_size.w, new_size.h)));
-                    s.states.set(xdg_toplevel::State::TiledTop);
-                    s.states.set(xdg_toplevel::State::TiledBottom);
-                    s.states.set(xdg_toplevel::State::TiledLeft);
-                    s.states.set(xdg_toplevel::State::TiledRight);
-                });
-            } else {
-                win.surface.with_pending_state(|s| {
-                    s.size = Some(Size::from((new_size.w, new_size.h)));
-                    s.states.set(xdg_toplevel::State::TiledTop);
-                    s.states.set(xdg_toplevel::State::TiledBottom);
-                    s.states.set(xdg_toplevel::State::TiledLeft);
-                    s.states.set(xdg_toplevel::State::TiledRight);
-                });
-            }
+                }
+            });
             win.surface.send_configure();
         }
     }
