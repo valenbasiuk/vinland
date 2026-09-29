@@ -28,6 +28,7 @@ use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::viewporter::ViewporterState;
+use smithay::wayland::xdg_activation::XdgActivationState;
 
 use crate::config::Config;
 use crate::cursor::{load_cursor, LoadedCursor};
@@ -148,6 +149,7 @@ pub struct Vinland {
     #[allow(dead_code)]
     pub presentation_state: PresentationState,
     pub idle_notifier_state: IdleNotifierState<Vinland>,
+    pub xdg_activation_state: XdgActivationState,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -283,6 +285,7 @@ impl Vinland {
         let viewporter_state = ViewporterState::new::<Vinland>(&display_handle);
         let fractional_scale_manager_state = FractionalScaleManagerState::new::<Vinland>(&display_handle);
         let presentation_state = PresentationState::new::<Vinland>(&display_handle, 1);
+        let xdg_activation_state = XdgActivationState::new::<Vinland>(&display_handle);
 
         // screencopy: permite a utilidades como grim/slurp capturar pantalla
         display_handle.create_global::<Vinland, ZwlrScreencopyManagerV1, ()>(3, ());
@@ -330,6 +333,7 @@ impl Vinland {
             fractional_scale_manager_state,
             presentation_state,
             idle_notifier_state,
+            xdg_activation_state,
         };
 
         (state, winit_evt_loop)
