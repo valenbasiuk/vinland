@@ -32,7 +32,7 @@ fn main() {
 
     // vinland::new -> inicializa todos los protocolos wayland y el backend
     // &display: display queda en main para pasarlo al generic source de calloop
-    let (mut state, winit_evt_loop) = Vinland::new(&display, event_loop.get_signal(), config);
+    let (mut state, winit_evt_loop) = Vinland::new(&display, event_loop.get_signal(), event_loop.handle(), config);
     info!("compositor inicializado");
 
     // cargar wallpaper (si está configurado) ahora que el renderer ya está listo
