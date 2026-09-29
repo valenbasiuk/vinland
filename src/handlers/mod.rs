@@ -12,5 +12,6 @@ pub mod xdg_foreign; // xdg_foreign, xdg_foreign_toplevel
 pub mod xdg_shell; // xdg_wm_base, xdg_surface, xdg_toplevel
 pub mod xwm; // xwayland y x11wm
 pub mod idle; // ext_idle_notify_v1
+pub mod xdg_activation; // xdg_activation_v1
 
 
