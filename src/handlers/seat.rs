@@ -948,6 +948,57 @@ impl Vinland {
 
         keyboard.set_focus(self, target_surface.cloned(), serial);
 
+        // Notificar a los suscriptores de IPC sobre el cambio de foco
+        let (focus_id, focus_title, focus_app_id) = if let Some(target) = target_surface {
+            use smithay::reexports::wayland_server::Resource;
+            let active_ws = self.active_workspace;
+            let win_info = self.workspaces[active_ws].windows.iter().find(|w| {
+                w.surface.wl_surface() == target || {
+                    let mut found = false;
+                    smithay::wayland::compositor::with_surface_tree_downward(
+                        w.surface.wl_surface(),
+                        (),
+                        |_, _, _| smithay::wayland::compositor::TraversalAction::DoChildren(()),
+                        |child, _, _| {
+                            if child == target {
+                                found = true;
+                            }
+                        },
+                        |_, _, _| true,
+                    );
+                    found
+                }
+            }).map(|w| {
+                let surf = w.surface.wl_surface();
+                let id = surf.id().protocol_id();
+                let (app_id, title) = smithay::wayland::compositor::with_states(surf, |states| {
+                    states
+                        .data_map
+                        .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+                        .map(|data| {
+                            let guard = data.lock().unwrap();
+                            (guard.app_id.clone(), guard.title.clone())
+                        })
+                        .unwrap_or((None, None))
+                });
+                (id, title, app_id)
+            });
+
+            if let Some((id, title, app_id)) = win_info {
+                (Some(id), title, app_id)
+            } else {
+                (Some(target.id().protocol_id()), None, None)
+            }
+        } else {
+            (None, None, None)
+        };
+
+        self.broadcast_ipc_event("focus", &serde_json::json!({
+            "id": focus_id,
+            "title": focus_title,
+            "app_id": focus_app_id,
+        }));
+
         // forzar un redraw para que el cambio de color del borde activo/inactivo
         // se refleje en el siguiente frame sin esperar un evento de movimiento del cursor
         self.backend.window().request_redraw();
