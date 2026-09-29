@@ -22,6 +22,8 @@ pub enum IpcRequest {
     ReloadConfig,
     GetConfig,
     Screenshot,
+    Subscribe,
+    SetLayout { layout: String },
 }
 
 #[derive(Debug, Serialize)]
@@ -213,6 +215,27 @@ pub fn process_ipc_command(state: &mut Vinland, line: &str) -> String {
             state.backend.window().request_redraw();
             IpcResponse::Ok { ok: true, message: Some("captura de pantalla solicitada".to_string()) }
         }
+        Ok(IpcRequest::SetLayout { layout }) => {
+            use crate::config::TilingLayout;
+            match layout.to_lowercase().as_str() {
+                "master_stack" | "masterstack" | "master" => {
+                    state.config.tiling.layout = TilingLayout::MasterStack;
+                    state.retile();
+                    state.broadcast_ipc_event("layout", &serde_json::json!({ "layout": "MasterStack" }));
+                    IpcResponse::Ok { ok: true, message: Some("layout cambiado a MasterStack".to_string()) }
+                }
+                "monocle" => {
+                    state.config.tiling.layout = TilingLayout::Monocle;
+                    state.retile();
+                    state.broadcast_ipc_event("layout", &serde_json::json!({ "layout": "Monocle" }));
+                    IpcResponse::Ok { ok: true, message: Some("layout cambiado a Monocle".to_string()) }
+                }
+                _ => IpcResponse::Error { ok: false, error: format!("layout desconocido: {}", layout) },
+            }
+        }
+        Ok(IpcRequest::Subscribe) => {
+            IpcResponse::Ok { ok: true, message: Some("suscripto a eventos de vinland".to_string()) }
+        }
         Err(e) => {
             IpcResponse::Error { ok: false, error: format!("error parseando json: {}", e) }
         }
@@ -224,13 +247,26 @@ pub fn process_ipc_command(state: &mut Vinland, line: &str) -> String {
 /// atiende clientes entrantes en el listener del socket unix
 pub fn handle_ipc_connections(listener: &UnixListener, state: &mut Vinland) {
     while let Ok((stream, _)) = listener.accept() {
-        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let _ = stream.set_nonblocking(false);
+        let Ok(clone_for_read) = stream.try_clone() else { continue };
+        let mut reader = BufReader::new(clone_for_read);
         let mut line = String::new();
         if reader.read_line(&mut line).is_ok() && !line.is_empty() {
-            let reply = process_ipc_command(state, &line);
-            let mut writer = stream;
-            let _ = writer.write_all(reply.as_bytes());
-            let _ = writer.flush();
+            let req: Result<IpcRequest, _> = serde_json::from_str(line.trim());
+            if let Ok(IpcRequest::Subscribe) = req {
+                let Ok(mut writer) = stream.try_clone() else { continue };
+                let reply = "{\"ok\":true,\"subscribed\":true}\n";
+                let _ = writer.write_all(reply.as_bytes());
+                let _ = writer.flush();
+                let _ = stream.set_nonblocking(true);
+                state.ipc_subscribers.push(stream);
+                tracing::info!("[ipc] nuevo suscriptor registrado (total: {})", state.ipc_subscribers.len());
+            } else {
+                let reply = process_ipc_command(state, &line);
+                let mut writer = stream;
+                let _ = writer.write_all(reply.as_bytes());
+                let _ = writer.flush();
+            }
         }
     }
 }
