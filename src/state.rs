@@ -150,6 +150,7 @@ pub struct Vinland {
     pub presentation_state: PresentationState,
     pub idle_notifier_state: IdleNotifierState<Vinland>,
     pub xdg_activation_state: XdgActivationState,
+    pub ipc_subscribers: Vec<std::os::unix::net::UnixStream>,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -334,9 +335,36 @@ impl Vinland {
             presentation_state,
             idle_notifier_state,
             xdg_activation_state,
+            ipc_subscribers: Vec::new(),
         };
 
         (state, winit_evt_loop)
+    }
+
+    /// Emite un evento en formato JSON a todos los clientes IPC conectados que hicieron "subscribe"
+    pub fn broadcast_ipc_event<T: serde::Serialize>(&mut self, event_name: &str, data: &T) {
+        if self.ipc_subscribers.is_empty() {
+            return;
+        }
+        let msg = serde_json::json!({
+            "event": event_name,
+            "data": data,
+        });
+        let mut json_str = serde_json::to_string(&msg).unwrap_or_default();
+        json_str.push('\n');
+        let bytes = json_str.as_bytes();
+
+        use std::io::Write;
+        self.ipc_subscribers.retain_mut(|sub| {
+            match sub.write_all(bytes) {
+                Ok(_) => {
+                    let _ = sub.flush();
+                    true
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => true,
+                Err(_) => false,
+            }
+        });
     }
 
     /// Carga el cursor theme desde config y lo sube como texturas GL.
@@ -407,6 +435,9 @@ impl Vinland {
                 .map(|w| w.surface.wl_surface().clone());
             self.set_keyboard_focus_surface(first_win.as_ref(), Serial::from(0));
             self.backend.window().request_redraw();
+            self.broadcast_ipc_event("workspace", &serde_json::json!({
+                "active": idx + 1,
+            }));
         }
     }
 
