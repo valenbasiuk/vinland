@@ -21,5 +21,7 @@ to use tools like grim: `WAYLAND_DISPLAY=wayland-1 grim screenshot.png`
 
 # pds
 
-comes from the Vinland region in "Fear and Hunger"
+it is recommended to only try to use it on the stable builds released! latest on main is not guaranteed to be working completely!
+
+name comes from the Vinland region in "Fear and Hunger"
 :3c
