@@ -25,6 +25,7 @@ use smithay::xwayland::{X11Wm, XWayland};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
+use smithay::wayland::idle_notify::IdleNotifierState;
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::viewporter::ViewporterState;
 
@@ -146,6 +147,7 @@ pub struct Vinland {
     pub fractional_scale_manager_state: FractionalScaleManagerState,
     #[allow(dead_code)]
     pub presentation_state: PresentationState,
+    pub idle_notifier_state: IdleNotifierState<Vinland>,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -213,6 +215,7 @@ impl Vinland {
     pub fn new(
         display: &Display<Vinland>,
         loop_signal: LoopSignal,
+        loop_handle: calloop::LoopHandle<'static, Vinland>,
         config: Config,
     ) -> (
         Self,
@@ -226,6 +229,7 @@ impl Vinland {
         let xdg_shell_state = XdgShellState::new::<Vinland>(&display_handle);
         let data_device_state = DataDeviceState::new::<Vinland>(&display_handle);
         let xdg_foreign_state = XdgForeignState::new::<Vinland>(&display_handle);
+        let idle_notifier_state = IdleNotifierState::<Vinland>::new(&display_handle, loop_handle);
 
         // seat (inputs generales)
         let mut seat_state = SeatState::new();
@@ -325,6 +329,7 @@ impl Vinland {
             viewporter_state,
             fractional_scale_manager_state,
             presentation_state,
+            idle_notifier_state,
         };
 
         (state, winit_evt_loop)
