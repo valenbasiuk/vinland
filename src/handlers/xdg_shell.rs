@@ -143,9 +143,30 @@ impl XdgShellHandler for Vinland {
         if target_ws_idx == self.active_workspace {
             let serial = SERIAL_COUNTER.next_serial();
             let wl_surface = surface.wl_surface().clone();
-            let keyboard = self.seat.get_keyboard().unwrap();
-            keyboard.set_focus(self, Some(wl_surface), serial);
+            self.set_keyboard_focus_surface(Some(&wl_surface), serial);
         }
+
+        use smithay::reexports::wayland_server::Resource;
+        let surf = surface.wl_surface();
+        let id = surf.id().protocol_id();
+        let (app_id, title) = smithay::wayland::compositor::with_states(surf, |states| {
+            states
+                .data_map
+                .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+                .map(|data| {
+                    let guard = data.lock().unwrap();
+                    (guard.app_id.clone(), guard.title.clone())
+                })
+                .unwrap_or((None, None))
+        });
+
+        self.broadcast_ipc_event("window_created", &serde_json::json!({
+            "id": id,
+            "workspace": target_ws_idx + 1,
+            "title": title,
+            "app_id": app_id,
+            "floating": is_floating,
+        }));
     }
 
     // llamado por xdg_foreign cuando se establece una relación padre-hijo
@@ -174,11 +195,17 @@ impl XdgShellHandler for Vinland {
 
     // llamado cuando una ventana toplevel es cerrada por el cliente
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        self.windows_mut()
-            .retain(|w| w.surface.wl_surface() != surface.wl_surface());
+        use smithay::reexports::wayland_server::Resource;
+        let id = surface.wl_surface().id().protocol_id();
+        for ws in &mut self.workspaces {
+            ws.windows.retain(|w| w.surface.wl_surface() != surface.wl_surface());
+        }
         info!("ventana cerrada por el cliente");
         // retile() redistribuye el espacio entre las ventanas restantes
         self.retile();
+        self.broadcast_ipc_event("window_destroyed", &serde_json::json!({
+            "id": id,
+        }));
     }
 
     // llamado cuando el cliente solicita minimizar la ventana
