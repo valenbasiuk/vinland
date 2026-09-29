@@ -55,6 +55,8 @@ impl Vinland {
     // process_input_event -> traduce eventos del backend a protocolos wayland
     // winit genera InputEvent<WinitInput>, nosotros los mapeamos al seat
     pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
+        self.idle_notifier_state.notify_activity(&self.seat);
+
         match event {
 
 
