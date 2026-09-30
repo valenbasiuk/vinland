@@ -96,6 +96,20 @@ pub struct LayerSurfaceItem {
     pub layer: Layer,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitlebarButtonKind {
+    Close,
+    Maximize,
+    Minimize,
+}
+
+#[derive(Debug, Clone)]
+pub struct TitlebarButtonHit {
+    pub surface_id: u32,
+    pub kind: TitlebarButtonKind,
+    pub rect: Rectangle<i32, Logical>,
+}
+
 // vinland -> estado global del compositor
 // todos los handlers de protocolos reciben &mut self de este struct
 pub struct Vinland {
@@ -151,6 +165,7 @@ pub struct Vinland {
     pub idle_notifier_state: IdleNotifierState<Vinland>,
     pub xdg_activation_state: XdgActivationState,
     pub ipc_subscribers: Vec<std::os::unix::net::UnixStream>,
+    pub titlebar_buttons: Vec<TitlebarButtonHit>,
 }
 
 /// Intenta cargar la imagen de fondo configurada y subirla como textura GL.
@@ -336,6 +351,7 @@ impl Vinland {
             idle_notifier_state,
             xdg_activation_state,
             ipc_subscribers: Vec::new(),
+            titlebar_buttons: Vec::new(),
         };
 
         (state, winit_evt_loop)

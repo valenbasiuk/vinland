@@ -2,7 +2,11 @@
 // punto de entrada
 // inicialización -> state.rs (Vinland::new)
 // renderizado    -> render.rs
-// protocolos     -> handlers/
+// protocolos     -> handlers
+
+/*
+vinland support is barack baby :P           --9/29/26--
+*/
 
 use calloop::EventLoop;
 use smithay::backend::winit::WinitInput;
@@ -32,7 +36,12 @@ fn main() {
 
     // vinland::new -> inicializa todos los protocolos wayland y el backend
     // &display: display queda en main para pasarlo al generic source de calloop
-    let (mut state, winit_evt_loop) = Vinland::new(&display, event_loop.get_signal(), event_loop.handle(), config);
+    let (mut state, winit_evt_loop) = Vinland::new(
+        &display,
+        event_loop.get_signal(),
+        event_loop.handle(),
+        config,
+    );
     info!("compositor inicializado");
 
     // cargar wallpaper (si está configurado) ahora que el renderer ya está listo

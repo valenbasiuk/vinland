@@ -144,6 +144,46 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
         .get_keyboard()
         .and_then(|k| k.current_focus());
 
+    // poblar botones de titlebar para hit-testing
+    state.titlebar_buttons.clear();
+    let th = state.config.decoration.titlebar_height;
+    let bw = state.config.decoration.border_width;
+    if th > 0 && state.config.decoration.show_titlebar_buttons {
+        let btn_size = (th - 8).clamp(8, 16);
+        let btn_margin = 8;
+        let btn_spacing = 6;
+
+        for (surface, rect, deco_mode, fullscreen) in &window_snap {
+            if *fullscreen || *deco_mode == DecoMode::ClientSide {
+                continue;
+            }
+            use smithay::reexports::wayland_server::Resource;
+            let surf_id = surface.wl_surface().id().protocol_id();
+            let btn_y = (rect.loc.y - th) + (th - btn_size) / 2;
+
+            let x_close = (rect.loc.x + rect.size.w + bw) - btn_margin - btn_size;
+            let x_max = x_close - btn_spacing - btn_size;
+            let x_min = x_max - btn_spacing - btn_size;
+
+            use crate::state::{TitlebarButtonHit, TitlebarButtonKind};
+            state.titlebar_buttons.push(TitlebarButtonHit {
+                surface_id: surf_id,
+                kind: TitlebarButtonKind::Close,
+                rect: Rectangle::new((x_close, btn_y).into(), (btn_size, btn_size).into()),
+            });
+            state.titlebar_buttons.push(TitlebarButtonHit {
+                surface_id: surf_id,
+                kind: TitlebarButtonKind::Maximize,
+                rect: Rectangle::new((x_max, btn_y).into(), (btn_size, btn_size).into()),
+            });
+            state.titlebar_buttons.push(TitlebarButtonHit {
+                surface_id: surf_id,
+                kind: TitlebarButtonKind::Minimize,
+                rect: Rectangle::new((x_min, btn_y).into(), (btn_size, btn_size).into()),
+            });
+        }
+    }
+
     let (renderer, mut framebuffer) = state.backend.bind().unwrap();
 
     // 1. colectar elementos de las ventanas en su posición de tiling
@@ -509,6 +549,39 @@ pub fn render_frame(state: &mut Vinland, start_time: Instant) {
 
             let titlebar_rect = Rectangle::new((x, y).into(), (w_phys, th_phys).into());
             let _ = frame.draw_solid(titlebar_rect, &[damage], tb_color);
+
+            // Dibujar botones del titlebar (cerrar, maximizar, minimizar)
+            if state.config.decoration.show_titlebar_buttons {
+                let btn_size = (th - 8).clamp(8, 16);
+                let btn_margin = 8;
+                let btn_spacing = 6;
+                let btn_y = (rect.loc.y - th) + (th - btn_size) / 2;
+
+                let x_close = (rect.loc.x + rect.size.w + bw) - btn_margin - btn_size;
+                let x_max = x_close - btn_spacing - btn_size;
+                let x_min = x_max - btn_spacing - btn_size;
+
+                let close_color = Color32F::from(state.config.decoration.button_close_color);
+                let max_color = Color32F::from(state.config.decoration.button_maximize_color);
+                let min_color = Color32F::from(state.config.decoration.button_minimize_color);
+
+                let r_close = Rectangle::new(
+                    (((x_close as f64) * scale.x) as i32, ((btn_y as f64) * scale.y) as i32).into(),
+                    (((btn_size as f64) * scale.x) as i32, ((btn_size as f64) * scale.y) as i32).into(),
+                );
+                let r_max = Rectangle::new(
+                    (((x_max as f64) * scale.x) as i32, ((btn_y as f64) * scale.y) as i32).into(),
+                    (((btn_size as f64) * scale.x) as i32, ((btn_size as f64) * scale.y) as i32).into(),
+                );
+                let r_min = Rectangle::new(
+                    (((x_min as f64) * scale.x) as i32, ((btn_y as f64) * scale.y) as i32).into(),
+                    (((btn_size as f64) * scale.x) as i32, ((btn_size as f64) * scale.y) as i32).into(),
+                );
+
+                let _ = frame.draw_solid(r_close, &[damage], close_color);
+                let _ = frame.draw_solid(r_max, &[damage], max_color);
+                let _ = frame.draw_solid(r_min, &[damage], min_color);
+            }
         }
     }
 

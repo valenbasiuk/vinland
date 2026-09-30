@@ -498,6 +498,60 @@ impl Vinland {
                 if wl_pointer::ButtonState::Pressed == state {
                     self.last_pointer_serial = Some(serial);
 
+                    // Si el click es con botón izquierdo (272), chequear primero si se hizo click
+                    // en algún botón del titlebar SSD (cerrar, maximizar, minimizar)
+                    if button == 272 {
+                        use crate::state::TitlebarButtonKind;
+                        let hit = self.titlebar_buttons.iter().find(|btn| {
+                            btn.rect.to_f64().contains(self.pointer_pos)
+                        }).cloned();
+
+                        if let Some(btn) = hit {
+                            info!("[titlebar] click en botón {:?} de superficie {}", btn.kind, btn.surface_id);
+                            match btn.kind {
+                                TitlebarButtonKind::Close => {
+                                    let mut closed = false;
+                                    for ws in &mut self.workspaces {
+                                        for win in &ws.windows {
+                                            use smithay::reexports::wayland_server::Resource;
+                                            if win.surface.wl_surface().id().protocol_id() == btn.surface_id {
+                                                win.surface.send_close();
+                                                closed = true;
+                                                break;
+                                            }
+                                        }
+                                        if closed { break; }
+                                    }
+                                }
+                                TitlebarButtonKind::Maximize => {
+                                    for win in self.windows_mut() {
+                                        use smithay::reexports::wayland_server::Resource;
+                                        if win.surface.wl_surface().id().protocol_id() == btn.surface_id {
+                                            win.maximized = !win.maximized;
+                                            if win.maximized {
+                                                win.floating = false;
+                                            }
+                                            break;
+                                        }
+                                    }
+                                    self.retile();
+                                }
+                                TitlebarButtonKind::Minimize => {
+                                    for win in self.windows_mut() {
+                                        use smithay::reexports::wayland_server::Resource;
+                                        if win.surface.wl_surface().id().protocol_id() == btn.surface_id {
+                                            win.minimized = true;
+                                            break;
+                                        }
+                                    }
+                                    self.retile();
+                                }
+                            }
+                            self.backend.window().request_redraw();
+                            return;
+                        }
+                    }
+
                     // si super está presionado y es click izquierdo (272), iniciar drag/move
                     if self.super_pressed && button == 272 {
                         let active_ws = self.active_workspace;
@@ -598,6 +652,35 @@ impl Vinland {
                     let keyboard = self.seat.get_keyboard().unwrap();
                     if !keyboard.is_grabbed() {
                         self.update_keyboard_focus(self.pointer_pos, serial);
+                    }
+
+                    // Si el click no dio en ninguna superficie wayland directa, chequear si cayó en el titlebar SSD
+                    if target.is_none() {
+                        let th = self.config.decoration.titlebar_height;
+                        let bw = self.config.decoration.border_width;
+                        if th > 0 {
+                            let active_ws = self.active_workspace;
+                            let clicked_titlebar = self.workspaces[active_ws].windows.iter().rev().find(|w| {
+                                if w.minimized || w.fullscreen {
+                                    return false;
+                                }
+                                let tb_rect = smithay::utils::Rectangle::new(
+                                    (w.rect.loc.x - bw, w.rect.loc.y - th).into(),
+                                    (w.rect.size.w + bw * 2, th).into(),
+                                );
+                                tb_rect.to_f64().contains(self.pointer_pos)
+                            }).map(|w| (w.surface.wl_surface().clone(), w.floating, w.rect));
+
+                            if let Some((surf, floating, rect)) = clicked_titlebar {
+                                self.set_keyboard_focus_surface(Some(&surf), serial);
+                                if floating && button == 272 {
+                                    let grab_offset = self.pointer_pos - rect.loc.to_f64();
+                                    self.drag_state = crate::state::DragState::FloatMove { source_surface: surf, grab_offset };
+                                    info!("[drag] iniciado movimiento de ventana flotante por arrastre del titlebar");
+                                    return;
+                                }
+                            }
+                        }
                     }
                 } else if wl_pointer::ButtonState::Released == state && (button == 272 || button == 273) {
                     match &self.drag_state {

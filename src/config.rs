@@ -252,6 +252,14 @@ pub struct DecorationConfig {
     pub titlebar_color_active: [f32; 4],
     /// color de fondo del titlebar cuando la ventana no tiene foco
     pub titlebar_color_inactive: [f32; 4],
+    /// mostrar botones en el titlebar SSD (cerrar, maximizar, minimizar)
+    pub show_titlebar_buttons: bool,
+    /// color [R, G, B, A] del boton cerrar
+    pub button_close_color: [f32; 4],
+    /// color [R, G, B, A] del boton maximizar
+    pub button_maximize_color: [f32; 4],
+    /// color [R, G, B, A] del boton minimizar
+    pub button_minimize_color: [f32; 4],
 }
 
 // configuracion de capturas de pantalla
@@ -360,6 +368,10 @@ impl Default for DecorationConfig {
             titlebar_height: 0,
             titlebar_color_active: [0.15, 0.35, 0.6, 1.0],
             titlebar_color_inactive: [0.1, 0.1, 0.15, 1.0],
+            show_titlebar_buttons: true,
+            button_close_color: [0.9, 0.25, 0.25, 1.0],
+            button_maximize_color: [0.25, 0.8, 0.35, 1.0],
+            button_minimize_color: [0.95, 0.75, 0.2, 1.0],
         }
     }
 }
