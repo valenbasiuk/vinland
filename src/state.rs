@@ -26,8 +26,11 @@ use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_scre
 
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
+use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::presentation::PresentationState;
+use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
+use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 
 use crate::config::Config;
@@ -164,6 +167,12 @@ pub struct Vinland {
     pub presentation_state: PresentationState,
     pub idle_notifier_state: IdleNotifierState<Vinland>,
     pub xdg_activation_state: XdgActivationState,
+    #[allow(dead_code)]
+    pub text_input_manager_state: TextInputManagerState,
+    #[allow(dead_code)]
+    pub input_method_manager_state: InputMethodManagerState,
+    #[allow(dead_code)]
+    pub virtual_keyboard_manager_state: VirtualKeyboardManagerState,
     pub ipc_subscribers: Vec<std::os::unix::net::UnixStream>,
     pub titlebar_buttons: Vec<TitlebarButtonHit>,
 }
@@ -302,6 +311,9 @@ impl Vinland {
         let fractional_scale_manager_state = FractionalScaleManagerState::new::<Vinland>(&display_handle);
         let presentation_state = PresentationState::new::<Vinland>(&display_handle, 1);
         let xdg_activation_state = XdgActivationState::new::<Vinland>(&display_handle);
+        let text_input_manager_state = TextInputManagerState::new::<Vinland>(&display_handle);
+        let input_method_manager_state = InputMethodManagerState::new::<Vinland, _>(&display_handle, |_client| true);
+        let virtual_keyboard_manager_state = VirtualKeyboardManagerState::new::<Vinland, _>(&display_handle, |_client| true);
 
         // screencopy: permite a utilidades como grim/slurp capturar pantalla
         display_handle.create_global::<Vinland, ZwlrScreencopyManagerV1, ()>(3, ());
@@ -350,6 +362,9 @@ impl Vinland {
             presentation_state,
             idle_notifier_state,
             xdg_activation_state,
+            text_input_manager_state,
+            input_method_manager_state,
+            virtual_keyboard_manager_state,
             ipc_subscribers: Vec::new(),
             titlebar_buttons: Vec::new(),
         };
